@@ -30,6 +30,78 @@ Chartstore_Project/
 
 ---
 
+## 🚀 使用方法
+
+### 命令行工具
+
+#### 基本用法
+
+```bash
+# Windows
+.\build\Release\DynaChartView.exe input.xml output.png
+
+# Linux/macOS
+./build/DynaChartView input.xml output.png
+```
+
+#### 命令行参数
+
+```
+用法：DynaChartView <输入文件> <输出文件> [选项]
+
+选项:
+  -s <float>, --scale <float>        缩放比例 (默认：1.0)
+  -S, --speed <float>   显示速度 (决定小节高度，默认：0.5)
+  -l, --page-limit <int>    每页小节数 (默认：32)
+  -f, --font <path>         字体路径 (默认：系统文件夹的arial.ttf)
+  --help                 显示帮助信息
+
+示例:
+  DynaChartView chart.xml
+  DynaChartView chart.xml chart.png
+  DynaChartView chart.xml chart.png -s 1.2
+  DynaChartView chart.xml chart.png -S 0.7 -l 24
+  DynaChartView chart.xml chart.png -f /usr/share/fonts/arial.ttf
+```
+
+#### 缺少MSVC运行时？
+
+release中提供的.exe安装包，安装后看安装文件夹，里面有vc_redist.x64.exe，运行即可安装MSVC运行时
+
+### C++ API 集成
+
+```cpp
+#include "chart_store.h"
+#include "dynachart_renderer.h"
+
+int main() {
+    // 1. 读取谱面
+    chart_store chart;
+    int result = chart.readfile("chart.xml");
+
+    if (result != 0) {
+        std::cerr << "Failed to load chart: " << result << std::endl;
+        return 1;
+    }
+
+    // 2. 创建渲染器
+    DynachartRenderer renderer;
+
+    // 3. 设置选项
+    DynachartRenderer::Options options;
+    options.scale = 1.5;
+    options.barHeight = 60.0;
+    options.gridVisible = true;
+
+    // 4. 生成图片
+    renderer.render(chart, "output.png", options);
+
+    return 0;
+}
+```
+
+---
+
 ## 📦 编译方法
 
 ### Windows 端 (MSVC)
@@ -71,8 +143,28 @@ cd vcpkg
 
 ```powershell
 cd build
-cmake .. -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release
+cmake .. -DCMAKE_TOOLCHAIN_FILE="<Your vcpkg install path>\vcpkg\scripts\buildsystems\vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>"
 ```
+
+**静态链接 MSVC 运行时**
+
+如果使用 vcpkg 静态版本，记得：
+
+安装 -static 版本的库 (opencv4:x64-windows-static freetype:x64-windows-static)
+可能需要定义 OPENCV_STATIC 宏
+
+```
+# 1. 安装静态依赖
+.\vcpkg install opencv4:x64-windows-static freetype:x64-windows-static
+
+# 2. 配置 CMake
+cmake .. -DCMAKE_TOOLCHAIN_FILE="<Your vcpkg install path>\vcpkg\scripts\buildsystems\vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>"
+
+# 3. 编译
+cmake --build . --config Release
+```
+
+
 
 #### 手动安装依赖 (不推荐)
 
@@ -118,7 +210,7 @@ cmake --build . --config Release
 如需生成不依赖 VCRedist 的独立可执行文件：
 
 ```powershell
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXE_LINKER_FLAGS="/MT"
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>"
 ```
 
 ---
@@ -199,74 +291,6 @@ make -j$(sysctl -n hw.ncpu)
 
 # 5. 运行程序
 ./chartstore input.xml output.png
-```
-
----
-
-## 🚀 使用方法
-
-### 命令行工具
-
-#### 基本用法
-
-```bash
-# Windows
-.\build\Release\DynaChartView.exe input.xml output.png
-
-# Linux/macOS
-./build/DynaChartView input.xml output.png
-```
-
-#### 命令行参数
-
-```
-用法：DynaChartView <输入文件> <输出文件> [选项]
-
-选项:
-  -s <float>, --scale <float>        缩放比例 (默认：1.0)
-  -S, --speed <float>   显示速度 (决定小节高度，默认：0.5)
-  -l, --page-limit <int>    每页小节数 (默认：32)
-  -f, --font <path>         字体路径 (默认：系统文件夹的arial.ttf)
-  --help                 显示帮助信息
-
-示例:
-  DynaChartView chart.xml
-  DynaChartView chart.xml chart.png
-  DynaChartView chart.xml chart.png -s 1.2
-  DynaChartView chart.xml chart.png -S 0.7 -l 24
-  DynaChartView chart.xml chart.png -f /usr/share/fonts/arial.ttf
-```
-
-### C++ API 集成
-
-```cpp
-#include "chart_store.h"
-#include "dynachart_renderer.h"
-
-int main() {
-    // 1. 读取谱面
-    chart_store chart;
-    int result = chart.readfile("chart.xml");
-
-    if (result != 0) {
-        std::cerr << "Failed to load chart: " << result << std::endl;
-        return 1;
-    }
-
-    // 2. 创建渲染器
-    DynachartRenderer renderer;
-
-    // 3. 设置选项
-    DynachartRenderer::Options options;
-    options.scale = 1.5;
-    options.barHeight = 60.0;
-    options.gridVisible = true;
-
-    // 4. 生成图片
-    renderer.render(chart, "output.png", options);
-
-    return 0;
-}
 ```
 
 ---
@@ -380,15 +404,25 @@ renderer.render(chart, "output.png", options);
 
 ## 📄 许可证
 
-本项目由 AXIS5 开发，保留所有权利。
+本项目由 [AXIS5](https://github.com/AXIS5hacker)开发，保留所有权利。
 
 ---
 
 ## 📞 联系方式
 
-- **开发者**: AXIS5
+- **开发者**: [AXIS5](https://github.com/AXIS5hacker)
 - **项目仓库**: DynaChartView
 - **问题反馈**: 通过 GitHub Issues
+
+---
+
+## 🙏 鸣谢
+
+本项目参考了以下开源项目：
+
+- **[Dynachart](https://github.com/Errno2048/Dynachart)** by [Errno2048](https://github.com/Errno2048)
+  - Python 原版实现，提供了核心算法和渲染逻辑参考
+  - 感谢原作者的开源贡献！
 
 ---
 
@@ -406,3 +440,5 @@ renderer.render(chart, "output.png", options);
 ---
 
 **Happy Charting! 🎵**
+
+

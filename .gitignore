@@ -367,3 +367,4 @@ FodyWeavers.xsd
 *.png
 CMakeSettings.json
 **/*.old*
+*build
