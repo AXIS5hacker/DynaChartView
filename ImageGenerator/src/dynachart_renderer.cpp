@@ -50,13 +50,14 @@ void DynachartRenderer::setFontPath(const std::string& path) {
     
     // 加载字体
     if (FT_Init_FreeType(&ftLibrary_) != 0) {
-        std::cerr << "Failed to initialize FreeType" << std::endl;
+        std::cerr << "[ERROR] Failed to initialize FreeType library" << std::endl;
         freeTypeAvailable_ = false;
         return;
     }
     
     if (FT_New_Face(ftLibrary_, fontPath_.c_str(), 0, &ftFace_) != 0) {
-        std::cerr << "Failed to load font: " << fontPath_ << std::endl;
+        std::cerr << "[ERROR] Failed to load font face from: " << fontPath_ << std::endl;
+        std::cerr << "[ERROR] Error code: " << FT_New_Face(ftLibrary_, fontPath_.c_str(), 0, &ftFace_) << std::endl;
         FT_Done_FreeType(ftLibrary_);
         ftLibrary_ = nullptr;
         freeTypeAvailable_ = false;
@@ -64,7 +65,7 @@ void DynachartRenderer::setFontPath(const std::string& path) {
     }
     
     freeTypeAvailable_ = true;
-    std::cout << "FreeType initialized successfully" << std::endl;
+    std::cout << "[SUCCESS] FreeType initialized successfully, font: " << fontPath_ << std::endl;
 }
 
 double DynachartRenderer::getMaxTime(const chart_store& chart) {
@@ -151,10 +152,12 @@ std::vector<DynachartRenderer::RenderNote> DynachartRenderer::convertNotes(const
                         auto subIt = subPositions.find(it->second);
                         if (subIt != subPositions.end()) {
                             rn.end = subIt->second;
+                            /*
                             std::cout<<"[Info] HOLD note with ID " << n.id << " on " 
                                      << (side == -1 ? "Left" : (side == 0 ? "Front" : "Right")) 
                                      << " side has corresponding SUB note with ID " << it->second 
 								     << " at time " << subIt->second << "." << std::endl;
+                            */
                         } else {
                             switch (side) {
                             case -1:  // LEFT
@@ -463,9 +466,6 @@ cv::Mat DynachartRenderer::drawBoard(const chart_store& chart, const Options& op
                          COLOR_SEMI_BAR_LINE, semiBarLineWidth);
             }
         }
-        
-        // 绘制时间标注
-        drawTimeMarker(board, x, static_cast<int>(y), i, chart, options, layout);
     }
     
     return board;
@@ -684,25 +684,14 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
     }
 }
 
-void DynachartRenderer::drawTimeMarkers(cv::Mat& img, const PageLayout& layout,
-                                       const std::vector<bpmchange>& bpmList,
-                                       double barPerMin, double timeOffset,
-                                       const Options& options) {
-    if (!freeTypeAvailable_ || !ftFace_) return;
-    
-    double barHeight = layout.barHeight * options.scale;
-    int fontHeight = static_cast<int>(std::round(FONT_SIZE * options.scale));
-    
-    FT_Set_Pixel_Sizes(ftFace_, 0, fontHeight);
-    
-    // 简化处理：暂不绘制时间标记
-    // 完整的实现需要使用 FreeType 渲染文本
-}
-
 void DynachartRenderer::drawTimeMarker(cv::Mat& img, int pageX, int y, int barIndex,
                                       const chart_store& chart, const Options& options,
                                       const PageLayout& layout) {
-    if (!freeTypeAvailable_ || !ftFace_) return;
+    if (!freeTypeAvailable_ || !ftFace_) {
+        std::cerr << "[WARNING] drawTimeMarker skipped: freeTypeAvailable_=" << freeTypeAvailable_ 
+                  << ", ftFace_=" << (ftFace_ ? "valid" : "null") << std::endl;
+        return;
+    }
     
     // 计算时间（毫秒）
     double timeMs = (barIndex / chart.get_barpm() * 60.0 - chart.get_offset()) * 1000.0;
@@ -712,37 +701,210 @@ void DynachartRenderer::drawTimeMarker(cv::Mat& img, int pageX, int y, int barIn
     int s = static_cast<int>((static_cast<long long>(timeMs) % 60000) / 1000);
     int ms = static_cast<int>(static_cast<long long>(timeMs) % 1000);
     
-    std::ostringstream text;
+    // 分别构建时间字符串和小节号字符串
+    std::ostringstream timeStr, barStr;
     if (h == 0) {
-        text << std::setfill('0') << std::setw(2) << m << ":"
+        timeStr << std::setfill('0') << std::setw(2) << m << ":"
              << std::setw(2) << s << ":"
-             << std::setw(3) << ms << " " << barIndex;
+             << std::setw(3) << ms;
     } else {
-        text << std::setfill('0') << std::setw(2) << h << ":"
+        timeStr << std::setfill('0') << std::setw(2) << h << ":"
              << std::setw(2) << m << ":"
              << std::setw(2) << s << ":"
-             << std::setw(3) << ms << " " << barIndex;
+             << std::setw(3) << ms;
     }
+    barStr << " " << barIndex;
     
-    int fontHeight = static_cast<int>(std::round(FONT_SIZE * options.scale));
+    std::string timeText = timeStr.str();
+    std::string barText = barStr.str();
+    
+    // 字体大小增加 50%
+    int fontHeight = static_cast<int>(std::round(FONT_SIZE * options.scale * 1.5));
     FT_Set_Pixel_Sizes(ftFace_, 0, fontHeight);
     
-    // 使用 FreeType 渲染文本（简化版本）
-    // 完整实现需要处理 FreeType 的 bitmap 输出到 cv::Mat
-    // 这里暂时跳过文本渲染，因为 FreeType 集成较复杂
+    // 渲染每个字符
+    int cursorX = pageX + 5;  // 小节线右侧 5 像素
+    int textY = y - 5;        // 底部线上方 5 像素
+    int renderedChars = 0;
+    
+    std::cout << "[Info] Rendering text: '" << timeText << " " << barIndex << "' at (" << pageX << ", " << y << "), fontHeight=" << fontHeight << std::endl;
+    
+    // 设置字体大小
+    FT_Error error = FT_Set_Pixel_Sizes(ftFace_, 0, fontHeight);
+    if (error != 0) {
+        std::cerr << "[ERROR] FT_Set_Pixel_Sizes failed: error=" << error << std::endl;
+    }
+    //std::cout << "[DEBUG] FT_Set_Pixel_Sizes result: error=" << error << ", face->size->height=" << ftFace_->size->metrics.height << std::endl;
+    
+    // 时间部分（white, per character）
+    for (char c : timeText) {
+        // 使用 FT_LOAD_RENDER 让 FreeType 自动渲染 glyph 到 bitmap
+        FT_Error loadError = FT_Load_Char(ftFace_, c, FT_LOAD_RENDER);
+        if (loadError != 0) {
+            std::cerr << "[WARNING] FT_Load_Char failed for '" << c << "': error=" << loadError << std::endl;
+            continue;
+        }
+        
+        FT_Bitmap* bitmap = &ftFace_->glyph->bitmap;
+        int bitmapWidth = bitmap->width;
+        int bitmapHeight = bitmap->rows;
+        int bitmapLeft = ftFace_->glyph->bitmap_left;
+        int bitmapTop = ftFace_->glyph->bitmap_top;
+		
+        /*
+        std::cout << "[DEBUG] Char '" << c << "': loadError=" << loadError 
+                  << ", bitmap=" << bitmapWidth << "x" << bitmapHeight 
+                  << ", bitmap_left=" << bitmapLeft << ", bitmap_top=" << bitmapTop
+                  << ", advance=" << (ftFace_->glyph->advance.x >> 6) << std::endl;
+        */
+        int charX = cursorX + bitmapLeft;
+        int charY = textY - bitmapTop;
+        
+        // bitmap 尺寸检查
+        if (bitmapWidth == 0 || bitmapHeight == 0) {
+            //std::cout << "[DEBUG] Char '" << c << "': skipped (empty bitmap)" << std::endl;
+            cursorX += ftFace_->glyph->advance.x >> 6;
+            continue;
+        }
+        
+        //std::cout << "[DEBUG] Char '" << c << "': pos=(" << charX << "," << charY << "), img_size=" << img.cols << "x" << img.rows << std::endl;
+        
+        // 确保在图像范围内
+        if (charX < 0 || charY < 0 || charX + bitmapWidth > img.cols || charY + bitmapHeight > img.rows) {
+            //std::cout << "[DEBUG] Char '" << c << "' skipped: out of bounds" << std::endl;
+            cursorX += ftFace_->glyph->advance.x >> 6;
+            continue;
+        }
+        
+        // 将 FreeType bitmap 复制到 cv::Mat
+        int pixelsWritten = 0;
+        for (int row = 0; row < bitmapHeight; ++row) {
+            int imgY = charY + row;
+            if (imgY < 0 || imgY >= img.rows) continue;
+            
+            for (int col = 0; col < bitmapWidth; ++col) {
+                int imgX = charX + col;
+                if (imgX < 0 || imgX >= img.cols) continue;
+                
+                int bitmapIndex = row * bitmap->width + col;
+                unsigned char alpha = bitmap->buffer[bitmapIndex];
+                
+                if (alpha > 0) {
+                    // 白色文字
+                    img.at<cv::Vec4b>(imgY, imgX)[0] = 255;  // B
+                    img.at<cv::Vec4b>(imgY, imgX)[1] = 255;  // G
+                    img.at<cv::Vec4b>(imgY, imgX)[2] = 255;  // R
+                    img.at<cv::Vec4b>(imgY, imgX)[3] = alpha; // A
+                    
+                    pixelsWritten++;
+                }
+            }
+        }
+        
+		// 如果 bitmap 不空但没有写入任何像素，输出调试信息
+        if (pixelsWritten == 0 && bitmapWidth > 0 && bitmapHeight > 0) {
+            std::cout << "[Info] Char '" << c << "': bitmap not empty but all pixels alpha=0" << std::endl;
+        }
+        renderedChars++;
+        cursorX += ftFace_->glyph->advance.x >> 6;
+        
+    }
+    
+    // 小节号（green, per character）
+    for (char c : barText) {
+        FT_Error loadError = FT_Load_Char(ftFace_, c, FT_LOAD_RENDER);
+        if (loadError != 0) {
+            std::cerr << "[WARNING] FT_Load_Char failed for '" << c << "': error=" << loadError << std::endl;
+            continue;
+        }
+        
+        FT_Bitmap* bitmap = &ftFace_->glyph->bitmap;
+        int bitmapWidth = bitmap->width;
+        int bitmapHeight = bitmap->rows;
+        int bitmapLeft = ftFace_->glyph->bitmap_left;
+        int bitmapTop = ftFace_->glyph->bitmap_top;
+        
+        int charX = cursorX + bitmapLeft;
+        int charY = textY - bitmapTop;
+        
+        // bitmap 尺寸检查
+        if (bitmapWidth == 0 || bitmapHeight == 0) {
+            cursorX += ftFace_->glyph->advance.x >> 6;
+            continue;
+        }
+        
+        // 确保在图像范围内
+        if (charX < 0 || charY < 0 || charX + bitmapWidth > img.cols || charY + bitmapHeight > img.rows) {
+            cursorX += ftFace_->glyph->advance.x >> 6;
+            continue;
+        }
+        
+        // 将 FreeType bitmap 复制到 cv::Mat
+        int pixelsWritten = 0;
+        for (int row = 0; row < bitmapHeight; ++row) {
+            int imgY = charY + row;
+            if (imgY < 0 || imgY >= img.rows) continue;
+            
+            for (int col = 0; col < bitmapWidth; ++col) {
+                int imgX = charX + col;
+                if (imgX < 0 || imgX >= img.cols) continue;
+                
+                int bitmapIndex = row * bitmap->width + col;
+                unsigned char alpha = bitmap->buffer[bitmapIndex];
+                
+                if (alpha > 0) {
+                    // 绿色文字（小节号部分）
+                    img.at<cv::Vec4b>(imgY, imgX)[0] = 0;    // B
+                    img.at<cv::Vec4b>(imgY, imgX)[1] = 255;  // G
+                    img.at<cv::Vec4b>(imgY, imgX)[2] = 0;    // R
+                    img.at<cv::Vec4b>(imgY, imgX)[3] = alpha; // A
+                    
+                    pixelsWritten++;
+                }
+            }
+        }
+        
+        if (pixelsWritten == 0 && bitmapWidth > 0 && bitmapHeight > 0) {
+            std::cout << "[Info] Char '" << c << "': bitmap not empty but all pixels alpha=0" << std::endl;
+        }
+        
+        renderedChars++;
+        cursorX += ftFace_->glyph->advance.x >> 6;
+    }
+    
+    std::cout << "[Info] Finished rendering time marker, character count: " << renderedChars << std::endl;
 }
 
 cv::Mat DynachartRenderer::render(const chart_store& chart, const Options& options) {
     PageLayout layout;
     
-    // 绘制棋盘框架
+    // 绘制棋盘框架（不包含时间标记）
     cv::Mat board = drawBoard(chart, options, layout);
     
     // 转换音符
     std::vector<RenderNote> notes = convertNotes(chart);
-	std::cout << "Convert complete. Start rendering......" << std::endl;
+    std::cout << "Convert complete. Start rendering......" << std::endl;
     // 绘制音符
     drawNotes(board, layout, notes, options, options.progressCallback);
+    
+    // 重新绘制时间标记（在音符之上）
+    double maxTime = getMaxTime(chart);
+    int pages = static_cast<int>(std::ceil(maxTime / options.timeLimit));
+    if (pages <= 0) pages = 1;
+    
+    int pageWidth = layout.pageWidth;
+    double scaledBarHeight = layout.barHeight * options.scale;
+    
+    for (int i = 0; i < pages * options.timeLimit + options.barSpan; i += options.barSpan) {
+        int pg = i / options.timeLimit;
+        int x = pageWidth * pg;
+        double y = layout.bottomLineY - scaledBarHeight * (i - pg * options.timeLimit);
+        
+        // 只在非页面边界的小节线处显示时间标注
+        if (i % options.timeLimit != 0) {
+            drawTimeMarker(board, x, static_cast<int>(y), i, chart, options, layout);
+        }
+    }
 	
     return board;
 }

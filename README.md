@@ -1,11 +1,11 @@
-# Dynachart Workspace
+# DynaChartView
 
-音乐游戏谱面处理项目，包含谱面解析和图片生成两个独立库。
+Dynamite音乐游戏谱面图片生成工具（C++ 实现）
 
 ## 项目结构
 
 ```
-workspace/
+Chartstore_Project/
 ├── ChartStore/              # 谱面存储与解析库
 │   ├── include/
 │   │   ├── chart_store.h    # 谱面类定义
@@ -14,178 +14,395 @@ workspace/
 │   │   └── chart_store.cpp  # 谱面解析实现
 │   └── CMakeLists.txt
 │
-├── ImageGenerator/          # 图片生成库
-│   ├── include/
-│   │   └── image_generator.h
-│   ├── src/
-│   │   └── image_generator.cpp
+├── ImageGenerator/          # 谱面图片生成库
+│   ├── include/ 
+│   │   └── dynachart_renderer.h
+│   ├── src/ 
+│   │   └── dynachart_renderer.cpp
 │   └── CMakeLists.txt
 │
-├── examples/                # 示例程序
-│   └── chart_viewer.cpp
+├── src/                     # 主程序入口
+│   └── main.cpp
 │
 ├── CMakeLists.txt           # 根 CMake 配置
 └── README.md
 ```
 
-## 库说明
+---
 
-### ChartStore 库
+## 📦 编译方法
 
-谱面解析库，提供 XML 格式的 Dynamix 谱面文件解析功能。
+### Windows 端 (MSVC)
 
-**主要功能：**
-- 解析 XML 格式的谱面文件
-- 支持多种音符类型：NORMAL, CHAIN, HOLD, SUB
-- 支持左右中三侧音符
-- 支持 BPM 变化
-- 谱面数据验证（Hold-Sub 匹配检查等）
+#### 前置要求
 
-**核心类：**
-- `chart_store` - 谱面数据存储类
+1. **Visual Studio 2019/2022** (包含 C++ 桌面开发)
+2. **CMake 3.15+**
+3. **vcpkg** (推荐，用于管理依赖)
 
-**使用示例：**
-```cpp
-#include "chart_store.h"
+#### 使用 vcpkg 安装依赖 (强烈推荐)
 
-chart_store chart;
-int result = chart.readfile("chart.xml");
+**vcpkg 是 Microsoft 开发的 C/C++ 包管理器，可自动解决 OpenCV 和 FreeType 依赖。**
 
-std::cout << "Center notes: " << chart.get_mid_count() << std::endl;
-std::cout << "Left notes: " << chart.get_left_count() << std::endl;
-std::cout << "Right notes: " << chart.get_right_count() << std::endl;
+```powershell
+# 1. 克隆 vcpkg (在项目目录外或任意位置)
+cd C:\
+git clone https://github.com/Microsoft/vcpkg.git
+cd vcpkg
+
+# 2. 初始化 vcpkg
+.\bootstrap-vcpkg.bat
+
+# 3. 安装项目所需依赖
+.\vcpkg install opencv4:x64-windows freetype:x64-windows
+
+# 4. 将 vcpkg 集成到 Visual Studio (可选，但推荐)
+.\vcpkg integrate install
+
+# 完成后，CMake 会自动找到这些库
 ```
 
-### ImageGenerator 库
+**vcpkg 安装说明：**
 
-图片生成库，基于 ChartStore 解析的数据生成谱面可视化图片。
+- `opencv4:x64-windows` - 图像处理库 (包含 core, imgcodecs, highgui 等模块)
+- `freetype:x64-windows` - 字体渲染库 (用于时间戳和文本显示)
 
-**主要功能：**
-- 生成单侧谱面图片
-- 生成完整谱面图片（三侧合并）
-- 支持自定义样式（缩放、颜色、网格等）
-- 支持 PNG 格式输出
+**CMake 配置时指定 vcpkg toolchain：**
 
-**核心类：**
-- `ImageGenerator` - 图片生成器类
-
-**使用示例：**
-```cpp
-#include "image_generator.h"
-
-ImageGenerator generator;
-ImageGenerator::Options options;
-options.scale = 1.0;
-options.barHeight = 50.0;
-
-generator.generateFromChart(chart, "output.png", options);
+```powershell
+cd build
+cmake .. -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release
 ```
 
-## 构建项目
+#### 手动安装依赖 (不推荐)
 
-### 前置要求
+**方法 1：OpenCV 官方安装包 + FreeType 手动编译**
 
-- CMake 3.15+
-- C++14 兼容编译器
-- OpenCV 4.x
-- MSVC (Windows) 或 GCC/Clang (Linux/macOS)
+```powershell
+# 下载 OpenCV 4.x Windows 安装包
+# https://github.com/opencv/opencv/releases
 
-### Windows (MSVC)
+# 解压后设置环境变量
+$env:OPENCV_DIR = "C:\opencv\build\x64\vc15\lib"
+$env:Path += ";C:\opencv\build\x64\vc15\bin"
 
-```bash
-# 创建构建目录
+# 注意：FreeType 需要单独下载源码编译，较麻烦
+```
+
+#### 编译步骤
+
+```powershell
+# 1. 进入项目目录
+cd path/to/DynaChartView
+
+# 2. 创建构建目录
+if (Test-Path build) { Remove-Item -Recurse -Force build }
 mkdir build
 cd build
 
-# 配置项目
-cmake .. -G "Visual Studio 16 2019"
+# 3. 配置项目 (自动检测 MSVC)
+cmake .. -DCMAKE_BUILD_TYPE=Release
 
-# 编译
+# 或者指定生成器
+# cmake .. -G "Visual Studio 17 2022" -A x64
+
+# 4. 编译
 cmake --build . --config Release
+
+# 5. 运行程序
+.\Release\chartstore.exe input.xml output.png
 ```
 
-### Linux/macOS
+#### 静态链接 MSVC 运行时
+
+如需生成不依赖 VCRedist 的独立可执行文件：
+
+```powershell
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXE_LINKER_FLAGS="/MT"
+```
+
+---
+
+### Linux 端
+
+#### 前置要求
 
 ```bash
-# 创建构建目录
-mkdir build
-cd build
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install -y \
+    build-essential \
+    cmake \
+    libopencv-dev \
+    libfreetype6-dev \
+    git
 
-# 配置项目
-cmake ..
-
-# 编译
-make -j4
+# CentOS/RHEL
+sudo yum groupinstall "Development Tools"
+sudo yum install -y cmake opencv-devel freetype-devel
 ```
 
-## 使用示例
+#### 编译步骤
+
+```bash
+# 1. 进入项目目录
+cd Chartstore_Project
+
+# 2. 创建构建目录
+mkdir -p build && cd build
+
+# 3. 配置项目
+cmake .. -DCMAKE_BUILD_TYPE=Release
+
+# 4. 编译 (使用所有 CPU 核心)
+make -j$(nproc)
+
+# 5. 运行程序
+./chartstore input.xml output.png
+```
+
+#### 静态链接 (可选)
+
+```bash
+cmake .. -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++"
+```
+
+---
+
+### macOS 端
+
+#### 前置要求
+
+```bash
+# 安装 Homebrew (如果未安装)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# 安装依赖
+brew install cmake opencv freetype
+```
+
+#### 编译步骤
+
+```bash
+# 1. 进入项目目录
+cd Chartstore_Project
+
+# 2. 创建构建目录
+mkdir -p build && cd build
+
+# 3. 配置项目
+cmake .. -DCMAKE_BUILD_TYPE=Release
+
+# 4. 编译
+make -j$(sysctl -n hw.ncpu)
+
+# 5. 运行程序
+./chartstore input.xml output.png
+```
+
+---
+
+## 🚀 使用方法
 
 ### 命令行工具
 
+#### 基本用法
+
 ```bash
-# 编译后运行示例程序
-./bin/chart_viewer input.xml output.png
+# Windows
+.\build\Release\DynaChartView.exe input.xml output.png
+
+# Linux/macOS
+./build/DynaChartView input.xml output.png
 ```
 
-### C++ 代码集成
+#### 命令行参数
+
+```
+用法：DynaChartView <输入文件> <输出文件> [选项]
+
+选项:
+  -s <float>, --scale <float>        缩放比例 (默认：1.0)
+  -S, --speed <float>   显示速度 (决定小节高度，默认：0.5)
+  -l, --page-limit <int>    每页小节数 (默认：32)
+  -f, --font <path>         字体路径 (默认：系统文件夹的arial.ttf)
+  --help                 显示帮助信息
+
+示例:
+  DynaChartView chart.xml
+  DynaChartView chart.xml chart.png
+  DynaChartView chart.xml chart.png -s 1.2
+  DynaChartView chart.xml chart.png -S 0.7 -l 24
+  DynaChartView chart.xml chart.png -f /usr/share/fonts/arial.ttf
+```
+
+### C++ API 集成
 
 ```cpp
 #include "chart_store.h"
-#include "image_generator.h"
+#include "dynachart_renderer.h"
 
 int main() {
     // 1. 读取谱面
     chart_store chart;
-    chart.readfile("chart.xml");
-    
-    // 2. 生成图片
-    ImageGenerator gen;
-    ImageGenerator::Options opts;
-    opts.scale = 1.5;
-    
-    gen.generateFromChart(chart, "chart.png", opts);
-    
+    int result = chart.readfile("chart.xml");
+
+    if (result != 0) {
+        std::cerr << "Failed to load chart: " << result << std::endl;
+        return 1;
+    }
+
+    // 2. 创建渲染器
+    DynachartRenderer renderer;
+
+    // 3. 设置选项
+    DynachartRenderer::Options options;
+    options.scale = 1.5;
+    options.barHeight = 60.0;
+    options.gridVisible = true;
+
+    // 4. 生成图片
+    renderer.render(chart, "output.png", options);
+
     return 0;
 }
 ```
 
-## 依赖库
+---
 
-- **OpenCV** - 图像处理
-- **C++ Standard Library** - C++14
+# 文件编码
 
-## 与旧项目对比
+- **XML 编码**: UTF-8
+- **输出图片**: PNG (RGBA)
 
-### Dynachart-Cpp
+---
 
-原项目将所有功能混合在一起，新架构的优势：
+## 🔧 常见问题
 
-1. **模块化** - ChartStore 和 ImageGenerator 独立，可单独使用
-2. **可维护性** - 清晰的职责分离
-3. **可复用性** - ChartStore 可在其他项目中使用
-4. **易测试** - 各模块可独立测试
+### Windows 编译问题
 
-### 迁移指南
+**问题 1: cmake 不是可识别的命令**
 
-如果你正在使用旧的 Dynachart-Cpp 项目：
+```powershell
+# 解决方法：将 CMake 添加到 PATH
+$env:Path += ";C:\Program Files\CMake\bin"
+```
 
-1. 将 `chart_store.h/cpp` 和 `defs.h` 复制到 `ChartStore/include` 和 `ChartStore/src`
-2. 将图片生成代码迁移到 `ImageGenerator` 目录
-3. 更新 CMakeLists.txt 使用新的库结构
-4. 修改 include 路径引用
+**问题 2: 找不到 OpenCV**
 
-## 开发计划
+```powershell
+# 设置 OpenCV 路径
+$env:OpenCV_DIR = "C:\opencv\build"
+cmake .. -DCMAKE_PREFIX_PATH="C:\opencv\build"
+```
 
-- [ ] 添加更多音符类型支持
-- [ ] 支持 SVG 矢量图输出
-- [ ] 添加 BPM 变化可视化
-- [ ] 支持自定义主题和样式
-- [ ] 添加批量处理功能
+**问题 3: 缺少 MSVC 运行时**
 
-## 许可证
+```powershell
+# 使用静态链接
+cmake .. -DCMAKE_EXE_LINKER_FLAGS="/MT"
+```
+
+### Linux 编译问题
+
+**问题 1: CMake 版本过低**
+
+```bash
+# 安装新版本
+wget https://github.com/Kitware/CMake/releases/download/v3.24.0/cmake-3.24.0-linux-x86_64.tar.gz
+tar -xzf cmake-3.24.0-linux-x86_64.tar.gz
+sudo cp -r cmake-3.24.0-linux-x86_64/* /usr/local/
+```
+
+**问题 2: OpenCV 库找不到**
+
+```bash
+# 设置 OpenCV 路径
+export OpenCV_DIR=/usr/lib/x86_64-linux-gnu/cmake/opencv4
+```
+
+### 运行时问题
+
+**问题 1: 字体渲染不显示**
+
+- Windows: 确保字体路径为 `C:\Windows\Fonts\arial.ttf`
+- Linux: 确保字体文件存在且可读
+
+**问题 2: 图片生成失败**
+
+- 检查 OpenCV 是否正确安装
+- 确认输入 XML 文件格式正确
+
+---
+
+## 📚 技术细节
+
+### 坐标系统
+
+- **BOARD_SIZE**: 149 像素/单位 (正面轨道宽度基准)
+- **NOTE_SIZE**: 129 像素/单位 (侧边轨道宽度基准)
+- **FRONT_BOARD_RATE**: 正面轨道缩放系数
+- **TIME_SIZE**: 2880 像素 (单页时间宽度)
+
+### 颜色定义
+
+```cpp
+// 音符颜色
+COLOR_NORMAL  = (100, 200, 255)  // 蓝色
+COLOR_CHAIN   = (100, 255, 100)  // 绿色
+COLOR_HOLD    = (255, 200, 100)  // 橙色
+```
+
+### 进度回调支持
+
+```cpp
+DynachartRenderer::Options options;
+options.progressCallback = [](int current, int total) {
+    double percent = (double)current / total * 100;
+    printf("Progress: %d/%d (%.1f%%)\n", current, total, percent);
+};
+
+renderer.render(chart, "output.png", options);
+```
+
+---
+
+## 🤝 贡献指南
+
+1. Fork 项目
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 开启 Pull Request
+
+---
+
+## 📄 许可证
 
 本项目由 AXIS5 开发，保留所有权利。
 
-## 联系方式
+---
 
-开发者：AXIS5
+## 📞 联系方式
+
+- **开发者**: AXIS5
+- **项目仓库**: DynaChartView
+- **问题反馈**: 通过 GitHub Issues
+
+---
+
+## 📝 更新日志
+
+### v1.0.0 (2026-04-12)
+
+- ✨ 初始版本发布
+- 🎨 支持三侧谱面渲染
+- 📐 音符右端点对齐修复
+- ⏱️ 时间戳渲染功能
+- 🔄 进度条回调支持
+- 🐛 修复多个已知问题
+
+---
+
+**Happy Charting! 🎵**

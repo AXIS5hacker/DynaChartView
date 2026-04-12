@@ -139,10 +139,6 @@ private:
     void drawNotes(cv::Mat& board, const PageLayout& layout, 
                    const std::vector<RenderNote>& notes, const Options& options,
                    const std::function<void(int, int)>& progressCallback = nullptr);
-    void drawTimeMarkers(cv::Mat& img, const PageLayout& layout, 
-                        const std::vector<bpmchange>& bpmList, 
-                        double barPerMin, double timeOffset,
-                        const Options& options);
     
     void drawTimeMarker(cv::Mat& img, int pageX, int y, int barIndex,
                        const chart_store& chart, const Options& options,
