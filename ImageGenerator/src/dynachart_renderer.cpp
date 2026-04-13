@@ -28,6 +28,10 @@ const cv::Scalar DynachartRenderer::NOTE_COLOR_CHAIN(51, 51, 255, 255);       //
 const cv::Scalar DynachartRenderer::NOTE_COLOR_HOLD_BOARD(128, 255, 255, 255); // 黄色
 const cv::Scalar DynachartRenderer::NOTE_COLOR_HOLD_FILL(0, 134, 70, 255);    // 绿色
 
+// 侧边背景颜色 (BGR 顺序)
+const cv::Scalar DynachartRenderer::COLOR_LEFT_SIDE_BG(20, 60, 20, 255);      // 暗绿色 (左侧背景)
+const cv::Scalar DynachartRenderer::COLOR_RIGHT_SIDE_BG(60, 20, 60, 255);     // 暗紫色 (右侧背景)
+
 DynachartRenderer::DynachartRenderer() : ftLibrary_(nullptr), ftFace_(nullptr), freeTypeAvailable_(false) {}
 
 DynachartRenderer::~DynachartRenderer() {
@@ -244,15 +248,11 @@ cv::Mat DynachartRenderer::generateNoteImage(const RenderNote& note,
         outlineColor = NOTE_COLOR_HOLD_BOARD;
         double widthHold = std::max(1.0, std::round(options.scale * NOTE_WIDTH_HOLD));
         lineWidth = static_cast<int>(widthHold);
+        // 参考 Python 逻辑：height = bar_height * (self.end - self.start) + WIDTH_HOLD
         // 确保高度至少为 1
         double holdDuration = std::max(0.001, note.end - note.start);
-        height = static_cast<int>(std::max(1.0, std::round(barHeight * holdDuration)));
+        height = static_cast<int>(std::max(1.0, std::round(barHeight * holdDuration + widthHold)));
         radius = std::max(1.0, std::round(options.scale * NOTE_WIDTH_HOLD / 2.0));
-        
-        // 如果有 SUB 尾部标记，增加额外高度
-        if (note.hasSub) {
-            height += static_cast<int>(std::round(options.scale * NOTE_WIDTH_HOLD));
-        }
     }
     
     int w = static_cast<int>(std::round(width));
@@ -337,12 +337,49 @@ cv::Mat DynachartRenderer::drawPage(const Options& options, PageLayout& layout) 
     cv::Mat img = cv::Mat::zeros(layout.pageHeight, layout.pageWidth, CV_8UC4);
     img.setTo(COLOR_BACKGROUND);
     
+    // 绘制侧边背景色块 (在线条之下)
+    // 左侧区域：从最左侧到左侧边线 - 暗绿色
+    if (layout.sideLineLeftSideX > 0) {
+        cv::rectangle(img, 
+                     cv::Point(0, static_cast<int>(pageBottom)),
+                     cv::Point(static_cast<int>(layout.sideLineLeftSideX), layout.pageHeight),
+                     COLOR_LEFT_SIDE_BG, -1);
+    }
+    
+    // 右侧区域：从右侧边线到最右侧 - 暗紫色
+    if (layout.pageWidth > layout.sideLineRightSideX) {
+        cv::rectangle(img,
+                     cv::Point(static_cast<int>(layout.sideLineRightSideX), static_cast<int>(pageBottom)),
+                     cv::Point(layout.pageWidth, layout.pageHeight),
+                     COLOR_RIGHT_SIDE_BG, -1);
+    }
+    
     // 绘制线条
     int bottomLineWidth = std::max(1, static_cast<int>(std::round(options.scale * BOTTOM_LINE_WIDTH)));
     int sideLineWidth = std::max(1, static_cast<int>(std::round(options.scale * SIDE_LINE_WIDTH)));
     int barLineWidth = std::max(1, static_cast<int>(std::round(options.scale * BAR_LINE_WIDTH)));
     int semiBarLineWidth = std::max(1, static_cast<int>(std::round(options.scale * SEMI_BAR_LINE_WIDTH)));
     
+    /* 不要在drawPage中绘制小节线，改为在drawBoard中绘制跨页小节线，避免重复绘制
+       只需绘制半小节线作为全图参考。*/
+
+	// 绘制顺序: 半小节线 -> 底部线 -> 顶部线 -> 侧线
+
+    // 绘制半小节线 (semi bar lines)
+    double scaledBarHeight = layout.barHeight * options.scale;
+    for (int i = 0; i < options.timeLimit + options.barSpan; i += options.barSpan) {
+
+        if (options.semiBarSpan > 0) {
+            // 顶部也要画半小节线。故终止条件为<=
+            for (double j = options.semiBarSpan; j <= options.barSpan; j += options.semiBarSpan) {
+                double semiY = layout.bottomLineY - scaledBarHeight * (i + j);
+                cv::line(img, cv::Point(0, static_cast<int>(semiY)),
+                    cv::Point(layout.pageWidth, static_cast<int>(semiY)),
+                    COLOR_SEMI_BAR_LINE, semiBarLineWidth);
+            }
+        }
+    }
+
     // 底部线
     cv::line(img, cv::Point(0, layout.bottomLineY), 
              cv::Point(layout.pageWidth, layout.bottomLineY),
@@ -377,25 +414,8 @@ cv::Mat DynachartRenderer::drawPage(const Options& options, PageLayout& layout) 
              cv::Point(layout.sideLineRightSideX, static_cast<int>(layout.bottomLineY)),
              cv::Scalar(255, 50, 255, 255), sideLineWidth);
     
-    // 绘制小节线 (bar lines)
-    double scaledBarHeight = layout.barHeight * options.scale;
-    for (int i = 0; i < options.timeLimit + options.barSpan; i += options.barSpan) {
-        if (i % options.timeLimit != 0) {
-            double y = layout.bottomLineY - scaledBarHeight * i;
-            cv::line(img, cv::Point(0, static_cast<int>(y)), 
-                     cv::Point(layout.pageWidth, static_cast<int>(y)),
-                     COLOR_BAR_LINE, barLineWidth);
-        }
-        // 绘制半小节线 (semi bar lines)
-        if (options.semiBarSpan > 0) {
-            for (double j = options.semiBarSpan; j < options.barSpan; j += options.semiBarSpan) {
-                double semiY = layout.bottomLineY - scaledBarHeight * (i + j);
-                cv::line(img, cv::Point(0, static_cast<int>(semiY)), 
-                         cv::Point(layout.pageWidth, static_cast<int>(semiY)),
-                         COLOR_SEMI_BAR_LINE, semiBarLineWidth);
-            }
-        }
-    }
+	
+
     
     return img;
 }
@@ -450,29 +470,55 @@ cv::Mat DynachartRenderer::drawBoard(const chart_store& chart, const Options& op
     int semiBarLineWidth = std::max(1, static_cast<int>(std::round(options.scale * SEMI_BAR_LINE_WIDTH)));
     double scaledBarHeight = layout.barHeight * options.scale;
     
-    for (int i = 0; i < pages * options.timeLimit + options.barSpan; i += options.barSpan) {
+    /*
+
+    // 绘制半小节线（在整个时间轴上连续绘制）
+    if (options.semiBarSpan > 0) {
+        for (double i = options.semiBarSpan; i < pages * options.timeLimit; i += options.semiBarSpan) {
+            int pg = static_cast<int>(i / options.timeLimit);
+            
+            // 边界检查：确保页码在有效范围内
+            if (pg >= pages) continue;
+            
+            //DO NOT static cast i into int!!!!
+
+
+            // 跳过页面边界线位置
+            if (static_cast<int>(i) % options.timeLimit == 0) continue;
+            
+            int x = pageWidth * pg;
+            double y = layout.bottomLineY - scaledBarHeight * (i - pg * options.timeLimit);
+            
+            // 确保线条只绘制到当前页右边界
+            int endX = x + pageWidth;
+            cv::line(board, cv::Point(x, static_cast<int>(y)), 
+                     cv::Point(endX, static_cast<int>(y)),
+                     COLOR_SEMI_BAR_LINE, semiBarLineWidth);
+        }
+
+    }
+
+    */
+    // 绘制小节线（跳过页面边界线）
+    for (int i = 0; i < pages * options.timeLimit; i += options.barSpan) {
         int pg = i / options.timeLimit;
+
+        // 边界检查：确保页码在有效范围内
+        if (pg >= pages) continue;
+
         int x = pageWidth * pg;
         double y = layout.bottomLineY - scaledBarHeight * (i - pg * options.timeLimit);
-        
+
         // 小节线（跳过页面边界线）
         if (i % options.timeLimit != 0) {
-            cv::line(board, cv::Point(x, static_cast<int>(y)), 
-                     cv::Point(x + pageWidth, static_cast<int>(y)),
-                     COLOR_BAR_LINE, barLineWidth);
-        }
-        
-        // 半小节线
-        if (options.semiBarSpan > 0) {
-            for (double j = options.semiBarSpan; j < options.barSpan; j += options.semiBarSpan) {
-                double semiY = layout.bottomLineY - scaledBarHeight * (i + j);
-                cv::line(board, cv::Point(x, static_cast<int>(semiY)), 
-                         cv::Point(x + pageWidth, static_cast<int>(semiY)),
-                         COLOR_SEMI_BAR_LINE, semiBarLineWidth);
-            }
+            // 确保线条只绘制到当前页右边界
+            int endX = x + pageWidth;
+            cv::line(board, cv::Point(x, static_cast<int>(y)),
+                cv::Point(endX, static_cast<int>(y)),
+                COLOR_BAR_LINE, barLineWidth);
         }
     }
-    
+
     return board;
 }
 
@@ -556,18 +602,20 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
             int clippedHeight = std::min(noteImg.rows, std::max(0, board.rows - clippedRealY));
             
             if (clippedWidth > 0 && clippedHeight > 0) {
-                if (note.type == 2) {  // HOLD 画在 board 上
+                if (note.type == 2) {  // HOLD 画在 board 上（底层）
                     cv::Rect srcRect(std::max(0, -realX), std::max(0, -realY), clippedWidth, clippedHeight);
                     cv::Rect dstRect(clippedRealX, clippedRealY, clippedWidth, clippedHeight);
                     noteImg(srcRect).copyTo(board(dstRect), mask(srcRect));
-                } else {  // 其他画在 boardFront 上
+                } else {  // 其他画在 boardFront 上（顶层，会在最后覆盖到 board 上）
                     cv::Rect srcRect(std::max(0, -realX), std::max(0, -realY), clippedWidth, clippedHeight);
                     cv::Rect dstRect(clippedRealX, clippedRealY, clippedWidth, clippedHeight);
                     noteImg(srcRect).copyTo(boardFront(dstRect), mask(srcRect));
                 }
             }
         } else {
-            // HOLD 音符跨页处理
+            // HOLD 音符跨页处理 - 参考 Python 的 draw_notes 函数逻辑
+            // Python: start_crop = img.crop((0, img.height - start_clip, img.width, img.height))
+            // Python: end_crop = img.crop((0, 0, img.width, end_clip))
             int capY = board.rows - static_cast<int>(layout.bottomLineY);
             int endY = static_cast<int>(layout.bottomLineY - (note.end - endPageNumber * options.timeLimit) * barHeight - widthHold2);
             int startClip = static_cast<int>(((pageNumber + 1) * options.timeLimit - note.start) * barHeight + widthHold2);
@@ -577,13 +625,15 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
             startClip = std::max(1, startClip);
             endClip = std::max(1, endClip);
             
-            // 裁剪 start 和 end 部分 (添加边界检查)
-            int startRectY = std::max(0, std::min(noteImg.rows, noteImg.rows - startClip));
-            int startRectH = std::max(1, std::min(startClip, noteImg.rows - startRectY));
-            int endRectH = std::max(1, std::min(endClip, noteImg.rows));
+            // 裁剪 start 部分：从底部裁剪 startClip 高度 (参考 Python: img.crop((0, img.height - start_clip, img.width, img.height)))
+            int startRectY = std::max(0, noteImg.rows - startClip);
+            int startRectH = noteImg.rows - startRectY;
+            
+            // 裁剪 end 部分：从顶部裁剪 endClip 高度 (参考 Python: img.crop((0, 0, img.width, end_clip)))
+            int endRectH = std::min(endClip, noteImg.rows);
             
             // 只有当裁剪区域有效时才进行裁剪
-            if (startRectH > 0 && startRectH <= noteImg.rows && endRectH > 0 && endRectH <= noteImg.rows) {
+            if (startRectH > 0 && endRectH > 0) {
                 cv::Rect startRect(0, startRectY, noteImg.cols, startRectH);
                 cv::Rect endRect(0, 0, noteImg.cols, endRectH);
                 
@@ -670,7 +720,7 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
         }
     }
     
-    // 将 boardFront 粘贴到 board 上
+    // 将 boardFront 粘贴到 board 上（boardFront 包含非 HOLD 音符，应该在 HOLD 之上）
     if (!boardFront.empty()) {
         cv::Mat mask;
         std::vector<cv::Mat> channels;
@@ -886,12 +936,16 @@ cv::Mat DynachartRenderer::render(const chart_store& chart, const Options& optio
     // 绘制棋盘框架（不包含时间标记）
     cv::Mat board = drawBoard(chart, options, layout);
     
+    
+    
     // 转换音符
     std::vector<RenderNote> notes = convertNotes(chart);
     std::cout << "Convert complete. Start rendering......" << std::endl;
     // 绘制音符
     drawNotes(board, layout, notes, options, options.progressCallback);
     
+
+
     // 重新绘制时间标记（在音符之上）
     double maxTime = getMaxTime(chart);
     int pages = static_cast<int>(std::ceil(maxTime / options.timeLimit));
@@ -900,17 +954,21 @@ cv::Mat DynachartRenderer::render(const chart_store& chart, const Options& optio
     int pageWidth = layout.pageWidth;
     double scaledBarHeight = layout.barHeight * options.scale;
     
-    for (int i = 0; i < pages * options.timeLimit + options.barSpan; i += options.barSpan) {
+    for (int i = 0; i < pages * options.timeLimit; i += options.barSpan) {
         int pg = i / options.timeLimit;
+        
+        // 边界检查：确保页码在有效范围内
+        if (pg >= pages) continue;
+        
         int x = pageWidth * pg;
         double y = layout.bottomLineY - scaledBarHeight * (i - pg * options.timeLimit);
         
-        // 只在非页面边界的小节线处显示时间标注
-        if (i % options.timeLimit != 0) {
-            drawTimeMarker(board, x, static_cast<int>(y), i, chart, options, layout);
-        }
+        // 在每个小节线处都显示时间标注
+        drawTimeMarker(board, x, static_cast<int>(y), i, chart, options, layout);
     }
+
 	
+
     return board;
 }
 

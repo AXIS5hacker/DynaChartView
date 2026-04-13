@@ -16,18 +16,18 @@
 #endif
 
 // 常量定义 (参考 Python 项目 lib/chart.py Board 类)
-#define SIDE_BORDER -0.4
-#define SIDE_CAP 6.2
-#define SIDE_LIMIT -1.1
-#define SIDE_VISIBLE_LIMIT -1.3
-#define SIDE_VISIBLE_CAP 6.5
+#define SIDE_BORDER -0.4            // 侧面底边界线位置
+#define SIDE_CAP 6.2                // 侧面上边界线位置
+#define SIDE_LIMIT -1.1             // 侧面底边界位置（低于该边界则完全不可见）
+#define SIDE_VISIBLE_LIMIT -1.1     // 侧面底边界位置（低于该边界则完全不可见）
+#define SIDE_VISIBLE_CAP 6.5        // 侧面上边界位置（高于该边界则完全不可见）
 
-#define FRONT_LEFT_BORDER -0.4
-#define FRONT_RIGHT_BORDER 5.4
-#define FRONT_LEFT_LIMIT -0.7
-#define FRONT_RIGHT_LIMIT 5.7
-#define FRONT_VISIBLE_LEFT_LIMIT -0.7
-#define FRONT_VISIBLE_RIGHT_LIMIT 5.7
+#define FRONT_LEFT_BORDER -0.4      // 正面左边界线位置
+#define FRONT_RIGHT_BORDER 5.4      // 正面右边界线位置
+#define FRONT_LEFT_LIMIT -0.7       // 正面左边界位置（低于该边界则完全不可见）
+#define FRONT_RIGHT_LIMIT 5.7       // 正面右边界位置（高于该边界则完全不可见）
+#define FRONT_VISIBLE_LEFT_LIMIT -0.7   // 正面左边界位置（低于该边界则完全不可见）
+#define FRONT_VISIBLE_RIGHT_LIMIT 5.7   // 正面右边界位置（高于该边界则完全不可见）
 
 #define FRONT_BOARD_RATE 2.0
 #define FRONT_NOTE_RATE 2.0
@@ -36,11 +36,11 @@
 #define BOARD_SIZE 149
 #define TIME_SIZE 2880
 
-#define SIDE_LINE_WIDTH 10
-#define BOTTOM_LINE_WIDTH 15
-#define BAR_LINE_WIDTH 7
-#define SEMI_BAR_LINE_WIDTH 4
-#define SPLIT_LINE_WIDTH 30
+#define SIDE_LINE_WIDTH 10          // 侧边线宽度
+#define BOTTOM_LINE_WIDTH 20        // 底部线宽度
+#define BAR_LINE_WIDTH 10           // 小节线宽度（高亮小节线）
+#define SEMI_BAR_LINE_WIDTH 4       // 半小节线宽度（非高亮小节线）
+#define SPLIT_LINE_WIDTH 30         // 页分割线宽度
 
 #define FONT_SIZE 96
 
@@ -99,6 +99,10 @@ private:
     static const cv::Scalar COLOR_SEMI_BAR_LINE;
     static const cv::Scalar COLOR_SPLIT_LINE;
     static const cv::Scalar COLOR_FONT;
+    
+    // 侧边背景颜色
+    static const cv::Scalar COLOR_LEFT_SIDE_BG;   // 暗绿色 (左侧背景)
+    static const cv::Scalar COLOR_RIGHT_SIDE_BG;  // 暗紫色 (右侧背景)
     
     // 音符颜色 (BGR 顺序)
     static const cv::Scalar NOTE_COLOR_NORMAL;      // RGB(0,255,255) -> BGR(255,255,0) 青色
