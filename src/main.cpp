@@ -50,6 +50,8 @@ int main(int argc, char* argv[]) {
     SetConsoleOutputCP(65001);
     SetConsoleCP(65001);
     
+    _setmode(_fileno(stdout), _O_U8TEXT);
+    _setmode(_fileno(stderr), _O_U8TEXT);
 #endif
 
     // 默认参数
