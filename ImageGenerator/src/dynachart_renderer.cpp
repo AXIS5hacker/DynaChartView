@@ -262,6 +262,11 @@ cv::Mat DynachartRenderer::generateNoteImage(const RenderNote& note,
     w = std::max(w, minWidth);
     h = std::max(h, minWidth);
     
+    // 微调：减小 note 的视觉宽度，让同一时间相邻位置的 note 在视觉上有间隙
+    // 减去一个微小的固定值（约 10 像素 * scale），保持中心不变
+    int widthReduction = static_cast<int>(std::round(10.0 * options.scale));
+    w = std::max(w - widthReduction, minWidth);
+    
     // 创建透明背景
     cv::Mat img = cv::Mat::zeros(h, w, CV_8UC4);
     

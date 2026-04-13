@@ -86,9 +86,9 @@ public:
 
 private:
 
-    // 音符尺寸
+	// 音符尺寸 (即音符代表的横线的粗细，这里设置蓝键32像素，红键16像素，HOLD键32像素，最小宽度14像素)
     static constexpr double NOTE_WIDTH_NORMAL = 32;
-    static constexpr double NOTE_WIDTH_CHAIN = 14;
+    static constexpr double NOTE_WIDTH_CHAIN = 16;
     static constexpr double NOTE_WIDTH_HOLD = 32;
     static constexpr double NOTE_WIDTH_MIN = 14;
 
