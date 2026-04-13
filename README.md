@@ -32,7 +32,11 @@ Chartstore_Project/
 
 ## 🔭 结果示例
 
+<img width="8344" height="23144" alt="Estahv H11" src="https://github.com/user-attachments/assets/4ce0dfd5-a5b2-4d72-841e-200727a07530" />
+Estahv Hard 11 (默认参数)
 
+<img width="16688" height="15224" alt="Finixtahv G15" src="https://github.com/user-attachments/assets/0467d717-ed8f-46d5-889d-72df26b80879" />
+Finixtahv Giga 15 (-b 2 -l 15 -S 0.7 —— 每2小节高亮小节线，显示时间戳，一页有15小节，流速0.7)
 
 ## 🚀 使用方法
 
