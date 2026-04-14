@@ -273,7 +273,7 @@ cv::Mat DynachartRenderer::generateNoteImage(const RenderNote& note,
     } else if (note.type == 2) {  // HOLD
         fillColor = NOTE_COLOR_HOLD_FILL;
         outlineColor = NOTE_COLOR_HOLD_BOARD;
-        double widthHold = std::max(1.0, std::round(options.scale * NOTE_WIDTH_HOLD));
+        double widthHold = std::max(1.0, std::round(options.scale * NOTE_WIDTH_HOLD_BORDER));
         lineWidth = static_cast<int>(widthHold);
         // 参考 Python 逻辑：height = bar_height * (self.end - self.start) + WIDTH_HOLD
         // 确保高度至少为 1
