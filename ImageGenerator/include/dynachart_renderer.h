@@ -44,7 +44,7 @@
 
 #define FONT_SIZE 96
 
-#define HOLD_OPACITY_WEIGHT 1 //hold 透明度
+#define HOLD_OPACITY_WEIGHT 0.9 //hold 透明度
 
 /**
  * @brief Dynachart 风格渲染器

@@ -26,11 +26,11 @@ const cv::Scalar DynachartRenderer::COLOR_FONT(255, 255, 255, 255);
 const cv::Scalar DynachartRenderer::NOTE_COLOR_NORMAL(255, 255, 0, 255);      // 青色
 const cv::Scalar DynachartRenderer::NOTE_COLOR_CHAIN(51, 51, 255, 255);       // 红色
 const cv::Scalar DynachartRenderer::NOTE_COLOR_HOLD_BOARD(128, 255, 255, 255); // 黄色（半透明）
-const cv::Scalar DynachartRenderer::NOTE_COLOR_HOLD_FILL(0, 134, 70, 255);    // 绿色（半透明）
+const cv::Scalar DynachartRenderer::NOTE_COLOR_HOLD_FILL(0, 100, 50, 255);    // 绿色（半透明）
 
 // 侧边背景颜色 (BGR 顺序)
-const cv::Scalar DynachartRenderer::COLOR_LEFT_SIDE_BG(20, 60, 20, 255);      // 暗绿色 (左侧背景)
-const cv::Scalar DynachartRenderer::COLOR_RIGHT_SIDE_BG(60, 20, 60, 255);     // 暗紫色 (右侧背景)
+const cv::Scalar DynachartRenderer::COLOR_LEFT_SIDE_BG(15, 45, 15, 255);      // 暗绿色 (左侧背景)
+const cv::Scalar DynachartRenderer::COLOR_RIGHT_SIDE_BG(45, 15, 45, 255);     // 暗紫色 (右侧背景)
 
 DynachartRenderer::DynachartRenderer() : ftLibrary_(nullptr), ftFace_(nullptr), freeTypeAvailable_(false) {}
 
@@ -559,11 +559,8 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
                                  const std::function<void(int, int)>& progressCallback) {
     double barHeight = layout.barHeight * options.scale;
     
-    cv::Mat holdBoard = cv::Mat::zeros(board.size(), CV_8UC4);  // 中间层：专门渲染 HOLD 音符
-    cv::Mat boardFront = cv::Mat::zeros(board.size(), CV_8UC4); // 顶层：非 HOLD 音符
-    
-    // 初始化 holdBoard 为背景色，这样 addWeighted 才能正确混合
-    holdBoard.setTo(cv::Scalar(0, 0, 0, 0));
+    cv::Mat holdBoardNote = cv::Mat::zeros(board.size(), CV_8UC4); // 中层：HOLD 音符（半透明）
+    cv::Mat boardFront = cv::Mat::zeros(board.size(), CV_8UC4);    // 顶层：非 HOLD 音符
     
     int totalNotes = notes.size();
     int processedNotes = 0;
@@ -637,12 +634,19 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
             int clippedHeight = std::min(noteImg.rows, std::max(0, board.rows - clippedRealY));
             
             if (clippedWidth > 0 && clippedHeight > 0) {
-                if (note.type == 2) {  // HOLD 在中间层用 addWeighted 实现半透明
+                if (note.type == 2) {  // HOLD 音符
                     cv::Rect srcRect(std::max(0, -realX), std::max(0, -realY), clippedWidth, clippedHeight);
                     cv::Rect dstRect(clippedRealX, clippedRealY, clippedWidth, clippedHeight);
                     
-                    // 获取 holdBoard 的 ROI
-                    cv::Mat holdBoardROI = holdBoard(dstRect);
+                    // 1. 黑色背景直接 copyTo 到 board
+                    cv::Mat boardROI = board(dstRect);
+                    cv::Mat blackBg = cv::Mat::zeros(clippedHeight, clippedWidth, CV_8UC4);
+                    blackBg.setTo(cv::Scalar(0, 0, 0, 255));
+                    blackBg.copyTo(boardROI);
+                    
+
+                    // 2. 在 holdBoardNote 上用 addWeighted 绘制 HOLD 音符
+                    cv::Mat holdBoardNoteROI = holdBoardNote(dstRect);
                     cv::Mat noteROI = noteImg(srcRect);
                     
                     // 提取 alpha 通道作为 mask
@@ -653,12 +657,12 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
                         alphaMask = channels[3];
                     }
                     
-                    // 使用 addWeighted 混合：holdBoard 权重 1，HOLD 音符权重 HOLD_OPACITY_WEIGHT
+                    // 使用 addWeighted 混合：holdBoardNote 权重 1，HOLD 音符权重 HOLD_OPACITY_WEIGHT
                     cv::Mat blended;
-                    cv::addWeighted(holdBoardROI, 1.0, noteROI, HOLD_OPACITY_WEIGHT, 0, blended, CV_8UC4);
+                    cv::addWeighted(holdBoardNoteROI, 1.0, noteROI, HOLD_OPACITY_WEIGHT, 0, blended, CV_8UC4);
                     
-                    // 使用 alphaMask 作为 mask 粘贴回 holdBoard
-                    blended.copyTo(holdBoardROI, alphaMask);
+                    // 使用 alphaMask 作为 mask 粘贴回 holdBoardNote
+                    blended.copyTo(holdBoardNoteROI, alphaMask);
                 } else {  // 其他画在 boardFront 上（顶层）
                     cv::Rect srcRect(std::max(0, -realX), std::max(0, -realY), clippedWidth, clippedHeight);
                     cv::Rect dstRect(clippedRealX, clippedRealY, clippedWidth, clippedHeight);
@@ -720,26 +724,44 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
                     int startDstX = std::max(0, std::min(startX, board.cols - startCrop.cols));
                     int endDstX = std::max(0, std::min(endX, board.cols - endCrop.cols));
                     
-                    // 粘贴 start 部分（在中间层用 addWeighted 实现半透明）
+                    // 粘贴 start 部分
                     if (capY >= 0 && capY + startCrop.rows <= board.rows) {
                         cv::Rect dstRect(startDstX, capY, startCrop.cols, startCrop.rows);
                         if (dstRect.x + dstRect.width <= board.cols && dstRect.y + dstRect.height <= board.rows) {
-                            cv::Mat holdBoardROI = holdBoard(dstRect);
+                            
+                            // 1. 黑色背景直接 copyTo 到 board
+                            cv::Mat boardROI = board(dstRect);
+                            cv::Mat blackBg = cv::Mat::zeros(startCrop.rows, startCrop.cols, CV_8UC4);
+                            blackBg.setTo(cv::Scalar(0, 0, 0, 255));
+                            blackBg.copyTo(boardROI);
+                            
+
+                            // 2. 在 holdBoardNote 上用 addWeighted 绘制 HOLD 音符
+                            cv::Mat holdBoardNoteROI = holdBoardNote(dstRect);
                             cv::Mat blended;
-                            cv::addWeighted(holdBoardROI, 1.0, startCrop, HOLD_OPACITY_WEIGHT, 0, blended, CV_8UC4);
-                            blended.copyTo(holdBoardROI, startMask.empty() ? cv::noArray() : startMask);
+                            cv::addWeighted(holdBoardNoteROI, 1.0, startCrop, HOLD_OPACITY_WEIGHT, 0, blended, CV_8UC4);
+                            blended.copyTo(holdBoardNoteROI, startMask.empty() ? cv::noArray() : startMask);
                         }
                     }
                     
-                    // 粘贴 end 部分（在中间层用 addWeighted 实现半透明）
+                    // 粘贴 end 部分
                     int actualEndY = std::max(0, std::min(endY, board.rows - endCrop.rows));
                     if (endY >= 0 && endY + endCrop.rows <= board.rows) {
                         cv::Rect dstRect(endDstX, actualEndY, endCrop.cols, endCrop.rows);
                         if (dstRect.x + dstRect.width <= board.cols && dstRect.y + dstRect.height <= board.rows) {
-                            cv::Mat holdBoardROI = holdBoard(dstRect);
+                            /*
+                            // 1. 黑色背景直接 copyTo 到 board
+                            cv::Mat boardROI = board(dstRect);
+                            cv::Mat blackBg = cv::Mat::zeros(endCrop.rows, endCrop.cols, CV_8UC4);
+                            blackBg.setTo(cv::Scalar(0, 0, 0, 255));
+                            blackBg.copyTo(boardROI);
+                            */
+
+                            // 2. 在 holdBoardNote 上用 addWeighted 绘制 HOLD 音符
+                            cv::Mat holdBoardNoteROI = holdBoardNote(dstRect);
                             cv::Mat blended;
-                            cv::addWeighted(holdBoardROI, 1.0, endCrop, HOLD_OPACITY_WEIGHT, 0, blended, CV_8UC4);
-                            blended.copyTo(holdBoardROI, endMask.empty() ? cv::noArray() : endMask);
+                            cv::addWeighted(holdBoardNoteROI, 1.0, endCrop, HOLD_OPACITY_WEIGHT, 0, blended, CV_8UC4);
+                            blended.copyTo(holdBoardNoteROI, endMask.empty() ? cv::noArray() : endMask);
                         }
                     }
                     
@@ -770,10 +792,19 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
                         if (capY >= 0 && capY + crop.rows <= board.rows) {
                             cv::Rect dstRect(pgDstX, capY, crop.cols, crop.rows);
                             if (dstRect.x + dstRect.width <= board.cols && dstRect.y + dstRect.height <= board.rows) {
-                                cv::Mat holdBoardROI = holdBoard(dstRect);
+                                
+                                // 1. 黑色背景直接 copyTo 到 board
+                                cv::Mat boardROI = board(dstRect);
+                                cv::Mat blackBg = cv::Mat::zeros(crop.rows, crop.cols, CV_8UC4);
+                                blackBg.setTo(cv::Scalar(0, 0, 0, 255));
+                                blackBg.copyTo(boardROI);
+                                
+
+                                // 2. 在 holdBoardNote 上用 addWeighted 绘制 HOLD 音符
+                                cv::Mat holdBoardNoteROI = holdBoardNote(dstRect);
                                 cv::Mat blended;
-                                cv::addWeighted(holdBoardROI, 1.0, crop, HOLD_OPACITY_WEIGHT, 0, blended, CV_8UC4);
-                                blended.copyTo(holdBoardROI, cropMask.empty() ? cv::noArray() : cropMask);
+                                cv::addWeighted(holdBoardNoteROI, 1.0, crop, HOLD_OPACITY_WEIGHT, 0, blended, CV_8UC4);
+                                blended.copyTo(holdBoardNoteROI, cropMask.empty() ? cv::noArray() : cropMask);
                             }
                         }
                     }
@@ -782,20 +813,24 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
         }
     }
     
-    // 将 holdBoard 粘贴到 board 上（中间层用 copyTo 合并）
-    if (!holdBoard.empty()) {
+    // 将 holdBoardNote 用 addWeighted 叠加到 board 上
+    if (!holdBoardNote.empty()) {
+        cv::Mat blendedBoard;
+        cv::addWeighted(board, 1.0, holdBoardNote, 1.0, 0, blendedBoard, CV_8UC4);
+        
+        // 提取 alpha 通道作为 mask
         cv::Mat mask;
         std::vector<cv::Mat> channels;
-        cv::split(holdBoard, channels);
+        cv::split(holdBoardNote, channels);
         mask = channels[3];  // 使用 alpha 通道作为 mask
         
-        int copyWidth = std::min(holdBoard.cols, board.cols);
-        int copyHeight = std::min(holdBoard.rows, board.rows);
+        int copyWidth = std::min(holdBoardNote.cols, board.cols);
+        int copyHeight = std::min(holdBoardNote.rows, board.rows);
         
         if (copyWidth > 0 && copyHeight > 0) {
             cv::Rect srcRect(0, 0, copyWidth, copyHeight);
             cv::Rect dstRect(0, 0, copyWidth, copyHeight);
-            holdBoard(srcRect).copyTo(board(dstRect), mask(srcRect));
+            blendedBoard(srcRect).copyTo(board(dstRect), mask(srcRect));
         }
     }
     
