@@ -83,55 +83,6 @@ jobs:
           path: build/bin/
           retention-days: 7
 
-  # ==================== CentOS Stream 构建 ====================
-  centos:
-    name: CentOS Stream 9
-    runs-on: ubuntu-latest
-    
-    container:
-      image: centos:stream9
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          # 启用 EPEL 和 CentOS Stream 仓库
-          dnf install -y epel-release
-          dnf install -y \
-            gcc-c++ \
-            cmake \
-            opencv-devel \
-            freetype-devel \
-            git \
-            make
-          # 清理缓存
-          dnf clean all
-
-      - name: Create build directory
-        run: mkdir -p build && cd build
-
-      - name: Configure
-        run: |
-          cd build
-          cmake .. \
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DOpenCV_STATIC=ON
-
-      - name: Build
-        run: |
-          cd build
-          cmake --build . -j$(nproc)
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dynachartview-centos
-          path: build/bin/
-          retention-days: 7
-
   # ==================== Fedora 构建 ====================
   fedora:
     name: Fedora Latest
@@ -146,9 +97,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # 安装开发工具
+          # 安装开发工具和依赖
           dnf install -y \
-            '@Development Tools' \
             gcc-c++ \
             cmake \
             opencv-devel \
@@ -237,47 +187,10 @@ jobs:
           path: build/bin/
           retention-days: 7
 
-  # ==================== macOS x86_64 构建 (Intel) ====================
-  macos-x86_64:
-    name: macOS x86_64 (Intel)
-    runs-on: macos-13  # 使用 Intel runner
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          brew update
-          brew install cmake opencv freetype
-
-      - name: Create build directory
-        run: mkdir -p build && cd build
-
-      - name: Configure
-        run: |
-          cd build
-          cmake .. \
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DCMAKE_OSX_ARCHITECTURES="x86_64" \
-            -DBUILD_SHARED_LIBS=OFF
-
-      - name: Build
-        run: |
-          cd build
-          cmake --build . -j$(sysctl -n hw.ncpu)
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dynachartview-macos-x86_64
-          path: build/bin/
-          retention-days: 7
-
   # ==================== macOS arm64 构建 (Apple Silicon) ====================
-  macos-arm64:
+  macos:
     name: macOS arm64 (Apple Silicon)
-    runs-on: macos-latest  # M1/M2 runner
+    runs-on: macos-14
     
     steps:
       - name: Checkout code
