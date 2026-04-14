@@ -44,7 +44,7 @@
 
 #define FONT_SIZE 96
 
-#define HOLD_OPACITY_WEIGHT 0.9 //hold 透明度
+#define HOLD_OPACITY_WEIGHT 1 //hold 透明度
 
 /**
  * @brief Dynachart 风格渲染器
@@ -63,7 +63,7 @@ public:
         double semiBarSpan = 1.0/16.0; // 半 bar 间距 (默认 1/16)
         std::string fontPath; // 字体路径
         std::function<void(int current, int total)> progressCallback; // 进度回调函数
-        
+
         Options() = default;
     };
 
@@ -77,9 +77,18 @@ public:
      * @param options 渲染选项
      * @return true 表示成功
      */
-    bool generate(const chart_store& chart, 
-                  const std::string& outputPath,
-                  const Options& options = Options());
+    bool generate(const chart_store& chart,
+        const std::string& outputPath,
+        const Options& options);
+
+    /**
+     * @brief 从 ChartStore 生成谱面图片（使用默认选项）
+     * @param chart 谱面数据 (ChartStore 对象)
+     * @param outputPath 输出文件路径
+     * @return true 表示成功
+     */
+    bool generate(const chart_store& chart,
+        const std::string& outputPath);
 
     /**
      * @brief 设置字体路径

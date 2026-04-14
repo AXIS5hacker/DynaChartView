@@ -1052,6 +1052,11 @@ cv::Mat DynachartRenderer::render(const chart_store& chart, const Options& optio
 }
 
 bool DynachartRenderer::generate(const chart_store& chart,
+    const std::string& outputPath) {
+    return generate(chart, outputPath, Options());
+}
+
+bool DynachartRenderer::generate(const chart_store& chart,
                                 const std::string& outputPath,
                                 const Options& options) {
     try {

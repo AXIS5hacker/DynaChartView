@@ -442,6 +442,11 @@ renderer.render(chart, "output.png", options);
 
 ## 📝 更新日志
 
+### v1.1.3 (2026-04-14)
+
+* 🐛 **修复Linux端编译**。修复了Linux环境下由于编译器支持问题导致的编译失败。现在在Fedora 36下可以正常编译。
+* 🔄 **改变Linux端默认使用字体路径** - fontPath = "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf";
+
 ### v1.1.2 (2026-04-14)
 
 * 🐛 **修复HOLD堆放逻辑**。现在，对于叠在一起的HOLD键，后面的HOLD会正确堆放在前一个HOLD的上方，而不是覆盖在一起了。

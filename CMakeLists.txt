@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(DynaChartView VERSION 1.1.2 LANGUAGES CXX)
+project(DynaChartView VERSION 1.1.3 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,6 +16,7 @@ set(VERSION_H_INPUT "${CMAKE_CURRENT_SOURCE_DIR}/include/version.h.in")
 set(VERSION_H_OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/include/version.h")
 configure_file(${VERSION_H_INPUT} ${VERSION_H_OUTPUT} @ONLY)
 
+if(MSVC)
 # 智能设置 MSVC 运行时库（/MT 或 /MTd）
 set(CompilerFlags
     CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE 
@@ -35,6 +36,8 @@ foreach(flag ${CompilerFlags})
         set(${flag} "/MT ${current}")
     endif()
 endforeach()
+endif()
+
 # ====================================================
 if(WIN32)
    add_definitions(-DUNICODE -D_UNICODE)
@@ -82,4 +85,5 @@ message(STATUS "OpenCV_STATIC:       ${OpenCV_STATIC}")
 message(STATUS "CMAKE_CXX_FLAGS:     ${CMAKE_CXX_FLAGS}")
 message(STATUS "CMAKE_CXX_FLAGS_DEBUG: ${CMAKE_CXX_FLAGS_DEBUG}")
 message(STATUS "CMAKE_CXX_FLAGS_RELEASE: ${CMAKE_CXX_FLAGS_RELEASE}")
+message(STATUS "CURRENT PLATFORM:    ${CMAKE_SYSTEM_NAME} ${CMAKE_HOST_SYSTEM_VERSION}-${CMAKE_HOST_SYSTEM_PROCESSOR}")
 message(STATUS "========================================")

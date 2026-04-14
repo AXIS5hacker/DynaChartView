@@ -13,6 +13,7 @@
  *   -b, --bar-span <int>      bar 线间距 (默认：2)
  *   -f, --font <path>         字体路径 (默认：Fonts/arial.ttf)
  *   -h, --help                显示帮助
+ *   --use-system-font         使用系统字体 (默认行为)
  */
 
 #include "chart_store.h"
@@ -111,7 +112,7 @@ int main(int argc, char* argv[]) {
 #ifdef _WIN32
             options.fontPath = "C:\\Windows\\Fonts\\arial.ttf";
 #else
-            options.fontPath = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+            options.fontPath = "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf";
 #endif
         }
         else if (!arg.empty() && arg[0] != '-') {
@@ -220,7 +221,7 @@ int main(int argc, char* argv[]) {
 #ifdef _WIN32
             fontPath = "C:\\Windows\\Fonts\\arial.ttf";
 #else
-            fontPath = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+            fontPath = "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf";
 #endif
         }
 
