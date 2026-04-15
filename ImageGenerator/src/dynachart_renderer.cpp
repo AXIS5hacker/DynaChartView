@@ -249,7 +249,13 @@ std::vector<DynachartRenderer::RenderNote> DynachartRenderer::convertNotes(const
     // 按开始时间排序
     std::sort(notes.begin(), notes.end(), 
               [](const RenderNote& a, const RenderNote& b) {
-                  if (a.start != b.start) return a.start < b.start;
+                  if (a.type != b.type) {
+					  // CHAIN 最后绘制，HOLD 最先绘制，NORMAL 在中间 
+					  return a.type < b.type;
+                  }
+                  else if (a.start != b.start) {
+					   return a.start < b.start;  // 开始时间升序
+                  }
                   // 同一起始时间的 hold 音符，应用碰撞检测逻辑
                   if (a.type == 2 && b.type == 2) {
                       // DO NOT CONVERT THE POSITIONS TO INT!!!!!!!!!
@@ -557,8 +563,17 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
                                  const std::vector<RenderNote>& notes, 
                                  const Options& options,
                                  const std::function<void(int, int)>& progressCallback) {
+    // 根据参数选择渲染逻辑
+    if (options.useLegacyRender) {
+        // 调用旧式渲染
+        drawNotesLegacy(board, layout, notes, options, progressCallback);
+        return;
+    }
+    
+    // 新式渲染
     double barHeight = layout.barHeight * options.scale;
     
+    // 新式渲染：创建中间层
     cv::Mat holdBoardNote = cv::Mat::zeros(board.size(), CV_8UC4); // 中层：HOLD 音符（半透明）
     cv::Mat boardFront = cv::Mat::zeros(board.size(), CV_8UC4);    // 顶层：非 HOLD 音符
     
@@ -638,14 +653,13 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
                     cv::Rect srcRect(std::max(0, -realX), std::max(0, -realY), clippedWidth, clippedHeight);
                     cv::Rect dstRect(clippedRealX, clippedRealY, clippedWidth, clippedHeight);
                     
-                    // 1. 黑色背景直接 copyTo 到 board
+                    // 新式渲染：黑色背景 copyTo 到 board，音符 addWeighted 到 holdBoardNote
                     cv::Mat boardROI = board(dstRect);
                     cv::Mat blackBg = cv::Mat::zeros(clippedHeight, clippedWidth, CV_8UC4);
                     blackBg.setTo(cv::Scalar(0, 0, 0, 255));
                     blackBg.copyTo(boardROI);
                     
-
-                    // 2. 在 holdBoardNote 上用 addWeighted 绘制 HOLD 音符
+                    // 在 holdBoardNote 上用 addWeighted 绘制 HOLD 音符
                     cv::Mat holdBoardNoteROI = holdBoardNote(dstRect);
                     cv::Mat noteROI = noteImg(srcRect);
                     
@@ -657,11 +671,9 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
                         alphaMask = channels[3];
                     }
                     
-                    // 使用 addWeighted 混合：holdBoardNote 权重 1，HOLD 音符权重 HOLD_OPACITY_WEIGHT
+                    // 使用 addWeighted 混合
                     cv::Mat blended;
                     cv::addWeighted(holdBoardNoteROI, 1.0, noteROI, HOLD_OPACITY_WEIGHT, 0, blended, CV_8UC4);
-                    
-                    // 使用 alphaMask 作为 mask 粘贴回 holdBoardNote
                     blended.copyTo(holdBoardNoteROI, alphaMask);
                 } else {  // 其他画在 boardFront 上（顶层）
                     cv::Rect srcRect(std::max(0, -realX), std::max(0, -realY), clippedWidth, clippedHeight);
@@ -728,15 +740,13 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
                     if (capY >= 0 && capY + startCrop.rows <= board.rows) {
                         cv::Rect dstRect(startDstX, capY, startCrop.cols, startCrop.rows);
                         if (dstRect.x + dstRect.width <= board.cols && dstRect.y + dstRect.height <= board.rows) {
-                            
-                            // 1. 黑色背景直接 copyTo 到 board
+                            // 新式渲染：黑色背景 copyTo 到 board，音符 addWeighted 到 holdBoardNote
                             cv::Mat boardROI = board(dstRect);
                             cv::Mat blackBg = cv::Mat::zeros(startCrop.rows, startCrop.cols, CV_8UC4);
                             blackBg.setTo(cv::Scalar(0, 0, 0, 255));
                             blackBg.copyTo(boardROI);
                             
-
-                            // 2. 在 holdBoardNote 上用 addWeighted 绘制 HOLD 音符
+                            // 在 holdBoardNote 上用 addWeighted 绘制 HOLD 音符
                             cv::Mat holdBoardNoteROI = holdBoardNote(dstRect);
                             cv::Mat blended;
                             cv::addWeighted(holdBoardNoteROI, 1.0, startCrop, HOLD_OPACITY_WEIGHT, 0, blended, CV_8UC4);
@@ -749,15 +759,13 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
                     if (endY >= 0 && endY + endCrop.rows <= board.rows) {
                         cv::Rect dstRect(endDstX, actualEndY, endCrop.cols, endCrop.rows);
                         if (dstRect.x + dstRect.width <= board.cols && dstRect.y + dstRect.height <= board.rows) {
-                            /*
-                            // 1. 黑色背景直接 copyTo 到 board
+                            // 新式渲染：黑色背景 copyTo 到 board，音符 addWeighted 到 holdBoardNote
                             cv::Mat boardROI = board(dstRect);
                             cv::Mat blackBg = cv::Mat::zeros(endCrop.rows, endCrop.cols, CV_8UC4);
                             blackBg.setTo(cv::Scalar(0, 0, 0, 255));
                             blackBg.copyTo(boardROI);
-                            */
-
-                            // 2. 在 holdBoardNote 上用 addWeighted 绘制 HOLD 音符
+                            
+                            // 在 holdBoardNote 上用 addWeighted 绘制 HOLD 音符
                             cv::Mat holdBoardNoteROI = holdBoardNote(dstRect);
                             cv::Mat blended;
                             cv::addWeighted(holdBoardNoteROI, 1.0, endCrop, HOLD_OPACITY_WEIGHT, 0, blended, CV_8UC4);
@@ -793,14 +801,13 @@ void DynachartRenderer::drawNotes(cv::Mat& board, const PageLayout& layout,
                             cv::Rect dstRect(pgDstX, capY, crop.cols, crop.rows);
                             if (dstRect.x + dstRect.width <= board.cols && dstRect.y + dstRect.height <= board.rows) {
                                 
-                                // 1. 黑色背景直接 copyTo 到 board
+                                // 新式渲染：黑色背景 copyTo 到 board，音符 addWeighted 到 holdBoardNote
                                 cv::Mat boardROI = board(dstRect);
                                 cv::Mat blackBg = cv::Mat::zeros(crop.rows, crop.cols, CV_8UC4);
                                 blackBg.setTo(cv::Scalar(0, 0, 0, 255));
                                 blackBg.copyTo(boardROI);
                                 
-
-                                // 2. 在 holdBoardNote 上用 addWeighted 绘制 HOLD 音符
+                                // 在 holdBoardNote 上用 addWeighted 绘制 HOLD 音符
                                 cv::Mat holdBoardNoteROI = holdBoardNote(dstRect);
                                 cv::Mat blended;
                                 cv::addWeighted(holdBoardNoteROI, 1.0, crop, HOLD_OPACITY_WEIGHT, 0, blended, CV_8UC4);
@@ -892,8 +899,8 @@ void DynachartRenderer::drawTimeMarker(cv::Mat& img, int pageX, int y, int barIn
     FT_Set_Pixel_Sizes(ftFace_, 0, fontHeight);
     
     // 渲染每个字符
-    int cursorX = pageX + 5;  // 小节线右侧 5 像素
-    int textY = y - 5;        // 底部线上方 5 像素
+    int cursorX = static_cast<int>(std::round(pageX + 30 * options.scale));  // 小节线右侧 30*缩放系数 像素
+    int textY = static_cast<int>(std::round(y - 30 * options.scale));        // 底部线上方 30*缩放系数 像素
     int renderedChars = 0;
     
     std::cout << "[Info] Rendering text: '" << timeText << " " << barIndex << "' at (" << pageX << ", " << y << "), fontHeight=" << fontHeight << std::endl;

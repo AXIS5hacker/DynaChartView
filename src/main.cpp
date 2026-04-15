@@ -13,6 +13,7 @@
  *   -b, --bar-span <int>      bar 线间距 (默认：2)
  *   -f, --font <path>         字体路径 (默认：Fonts/arial.ttf)
  *   -h, --help                显示帮助
+ *   --legacy-render           使用旧式渲染 (HOLD重叠部分不会叠加而是互相遮挡)
  *   --use-system-font         使用系统字体 (默认行为)
  */
 
@@ -44,6 +45,7 @@ void printUsage(const char* program) {
               << "  -b, --bar-span <int>      Bars between bar lines (default: 2)\n"
               << "  -f, --font <path>         Custom font path\n"
               << "  --use-system-font         Use system Arial font (default on Windows)\n"
+              << "  --legacy-render           Use legacy rendering (no display for overlapped holds)\n"
               << "  -h, --help                Show this help message\n";
 }
 
@@ -86,21 +88,37 @@ int main(int argc, char* argv[]) {
         else if (arg == "-s" || arg == "--scale") {
             if (i + 1 < argc) {
                 options.scale = std::stod(argv[++i]);
+                if (options.scale <= 0.05) {
+                    std::cerr << "Error: Scale must be a positive number, at least 0.05." << std::endl;
+                    return 1;
+				}
             }
         }
         else if (arg == "-S" || arg == "--speed") {
             if (i + 1 < argc) {
                 options.speed = std::stod(argv[++i]);
+                if(options.speed <= 0.05) {
+                    std::cerr << "Error: Speed must be a positive number, at least 0.05." << std::endl;
+                    return 1;
+				}
             }
         }
         else if (arg == "-l" || arg == "--page-limit") {
             if (i + 1 < argc) {
                 options.timeLimit = std::stoi(argv[++i]);
+                if (options.timeLimit <= 0) {
+                    std::cerr << "Error: Page limit must be a positive integer." << std::endl;
+                    return 1;
+                }
             }
         }
         else if (arg == "-b" || arg == "--bar-span") {
             if (i + 1 < argc) {
                 options.barSpan = std::stoi(argv[++i]);
+                if (options.barSpan <= 0) {
+                    std::cerr << "Error: Bar span must be a positive integer." << std::endl;
+                    return 1;
+				}
             }
         }
         else if (arg == "-f" || arg == "--font") {
@@ -114,6 +132,9 @@ int main(int argc, char* argv[]) {
 #else
             options.fontPath = "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf";
 #endif
+        }
+        else if (arg == "--legacy-render") {
+            options.useLegacyRender = true;
         }
         else if (!arg.empty() && arg[0] != '-') {
             if (inputFile.empty()) {
@@ -255,6 +276,7 @@ int main(int argc, char* argv[]) {
         std::cout << "  Speed: " << options.speed << std::endl;
         std::cout << "  Time Limit: " << options.timeLimit << " bars/page" << std::endl;
         std::cout << "  Bar Span: " << options.barSpan << std::endl;
+        std::cout << "  Rendering Mode: " << (options.useLegacyRender ? "Legacy (no hold overlap display)" : "New (with hold overlap display)") << std::endl;
 
         // 设置进度回调
         auto startTime = std::chrono::steady_clock::now();

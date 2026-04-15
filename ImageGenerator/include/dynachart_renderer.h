@@ -56,13 +56,14 @@ class DynachartRenderer {
 public:
     // 渲染选项
     struct Options {
-        double scale = 0.5;           // 图像缩放比例 (默认 0.5)
+        double scale = 0.25;           // 图像缩放比例 (默认 0.25)
         int timeLimit = 32;           // 每页显示的 bar 数 (默认 32)
         double speed = 0.5;           // 显示速度 (默认 0.5)
         int barSpan = 2;              // 两条 bar 线之间的 bar 数 (默认 2)
         double semiBarSpan = 1.0/16.0; // 半 bar 间距 (默认 1/16)
         std::string fontPath; // 字体路径
         std::function<void(int current, int total)> progressCallback; // 进度回调函数
+        bool useLegacyRender = false; // 是否启用旧式渲染 (默认 false，使用新式渲染)
 
         Options() = default;
     };
@@ -155,6 +156,11 @@ private:
     void drawNotes(cv::Mat& board, const PageLayout& layout, 
                    const std::vector<RenderNote>& notes, const Options& options,
                    const std::function<void(int, int)>& progressCallback = nullptr);
+    
+    // 旧式渲染方法（在 dynachart_renderer_legacy.cpp 中实现）
+    void drawNotesLegacy(cv::Mat& board, const PageLayout& layout,
+                         const std::vector<RenderNote>& notes, const Options& options,
+                         const std::function<void(int, int)>& progressCallback = nullptr);
     
     void drawTimeMarker(cv::Mat& img, int pageX, int y, int barIndex,
                        const chart_store& chart, const Options& options,

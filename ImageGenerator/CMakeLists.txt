@@ -21,6 +21,7 @@ endif()
 # 添加源文件
 set(IMAGEGEN_SOURCES
     src/dynachart_renderer.cpp
+    src/dynachart_renderer_legacy.cpp
 )
 
 # 创建静态库
