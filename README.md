@@ -74,6 +74,7 @@ Usage: DynaChartView <input file> <output file> [options]
 Options:
   -s <float>, --scale <float>        Scaling factor (default: 0.25)
   -S, --speed <float>       Display speed (determines bar height, default: 0.5)
+  -b, --bar-span <int>      Highlight bar line interval (default: 2)
   -l, --page-limit <int>    Number of bars per page (default: 32)
   -f, --font <path>         Font file path (default: arial.ttf from system folder)
   --help                    Show help information
