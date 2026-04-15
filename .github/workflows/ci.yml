@@ -1,225 +1,261 @@
-name: CI
-
+name: CI Build
 on:
   push:
-    branches: [ main, develop, master ]
+    branches: [ main, master ]
+    tags: [ 'v*' ]
   pull_request:
-    branches: [ main, develop, master ]
+    branches: [ main, master ]
 
-# 取消之前的运行（同一 PR 的新提交会取消旧的）
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workspace }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  # 全局 CMake 配置
-  BUILD_TYPE: Release
+  CMAKE_BUILD_TYPE: Release
 
 jobs:
-  # ==================== Ubuntu 构建 ====================
-  ubuntu:
-    name: Ubuntu (${{ matrix.compiler }})
-    runs-on: ubuntu-latest
-    
+  build-ubuntu:
+    name: Ubuntu ${{ matrix.version }} ${{ matrix.arch }} (${{ matrix.compiler }})
+    runs-on: ${{ matrix.use_runner && format('ubuntu-24.04-{0}', matrix.arch) || 'ubuntu-24.04' }}
     strategy:
       matrix:
-        compiler: [gcc, clang]
-      fail-fast: false
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies (GCC)
-        if: matrix.compiler == 'gcc'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            g++ \
-            cmake \
-            libopencv-dev \
-            libfreetype6-dev
-
-      - name: Install dependencies (Clang)
-        if: matrix.compiler == 'clang'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            clang \
-            cmake \
-            libopencv-dev \
-            libfreetype6-dev
-
-      - name: Create build directory
-        run: mkdir -p build && cd build
-
-      - name: Configure (GCC)
-        if: matrix.compiler == 'gcc'
-        run: |
-          cd build
-          CC=gcc CXX=g++ cmake .. \
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DOpenCV_STATIC=ON
-
-      - name: Configure (Clang)
-        if: matrix.compiler == 'clang'
-        run: |
-          cd build
-          CC=clang CXX=clang++ cmake .. \
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DOpenCV_STATIC=ON
-
-      - name: Build
-        run: |
-          cd build
-          cmake --build . -j$(nproc)
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dynachartview-ubuntu-${{ matrix.compiler }}
-          path: build/bin/
-          retention-days: 7
-
-  # ==================== Fedora 构建 ====================
-  fedora:
-    name: Fedora Latest
-    runs-on: ubuntu-latest
-    
-    container:
-      image: fedora:latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          # 安装开发工具和依赖
-          dnf install -y \
-            gcc-c++ \
-            cmake \
-            opencv-devel \
-            freetype-devel \
-            git \
-            make
-          # 清理缓存
-          dnf clean all
-
-      - name: Create build directory
-        run: mkdir -p build && cd build
-
-      - name: Configure
-        run: |
-          cd build
-          cmake .. \
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DOpenCV_STATIC=ON
-
-      - name: Build
-        run: |
-          cd build
-          cmake --build . -j$(nproc)
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dynachartview-fedora
-          path: build/bin/
-          retention-days: 7
-
-  # ==================== Windows 构建 ====================
-  windows:
-    name: Windows (${{ matrix.build_type }})
-    runs-on: windows-latest
-    
-    strategy:
-      matrix:
-        build_type: [Release, Debug]
         include:
-          - build_type: Release
-            config: Release
-          - build_type: Debug
-            config: Debug
+          - version: "24.04"
+            arch: amd64
+            compiler: gcc
+            use_runner: true
+          - version: "24.04"
+            arch: amd64
+            compiler: clang
+            use_runner: true
+          - version: "24.04"
+            arch: arm64
+            compiler: gcc
+            use_runner: true
+          - version: "20.04"
+            arch: amd64
+            compiler: gcc
+            use_runner: false
+          - version: "20.04"
+            arch: arm64
+            compiler: gcc
+            use_runner: false
       fail-fast: false
-    
+
     steps:
+      - name: Set up QEMU for multi-architecture
+        if: ${{ !matrix.use_runner }}
+        uses: docker/setup-qemu-action@v3
+      
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup MSVC (x64)
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Install OpenCV (vcpkg)
+      - name: Install dependencies (GitHub Runner native)
+        if: ${{ matrix.use_runner }}
         run: |
-          # 克隆 vcpkg
-          git clone https://github.com/microsoft/vcpkg.git
-          cd vcpkg
-          .\bootstrap-vcpkg.bat
-          .\vcpkg.exe install opencv4:x64-windows freetype:x64-windows
+          sudo apt update --fix-missing && sudo apt install -y --fix-broken --no-install-recommends \
+            build-essential make cmake clang libopencv-dev libfreetype6-dev
 
-      - name: Create build directory
-        run: mkdir build
-
-      - name: Configure
+      - name: Build and compile (GitHub Runner native)
+        if: ${{ matrix.use_runner }}
         run: |
-          cd build
-          cmake .. -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_BUILD_TYPE=${{ matrix.config }} `
-            -DCMAKE_TOOLCHAIN_FILE=C:/Users/runneradmin/vcpkg/scripts/buildsystems/vcpkg.cmake `
-            -DBUILD_SHARED_LIBS=OFF `
-            -DOpencv_STATIC=ON
+          mkdir -p build && cd build
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            CC=gcc CXX=g++ cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
+          else
+            CC=clang CXX=clang++ cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
+          fi
+          make -j$(nproc)
+          cd bin && tar -zcf ../../ubuntu-${{ matrix.version }}-${{ matrix.arch }}-${{ matrix.compiler }}.tar.gz ./*
 
-      - name: Build
+      - name: Build and compile (Docker)
+        if: ${{ !matrix.use_runner }}
         run: |
-          cd build
-          cmake --build . --config ${{ matrix.config }} -j$(nproc)
+          docker run --rm \
+            --platform linux/${{ matrix.arch }} \
+            -e DEBIAN_FRONTEND=noninteractive \
+            -e TZ=UTC \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            ubuntu:${{ matrix.version }} \
+            /bin/bash -c "
+              apt update --fix-missing && apt install -y --fix-broken --no-install-recommends \
+                build-essential make cmake clang libopencv-dev libfreetype6-dev
+              mkdir -p build && cd build
+              if [ \"${{ matrix.compiler }}\" = \"gcc\" ]; then
+                CC=gcc CXX=g++ cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
+              else
+                CC=clang CXX=clang++ cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
+              fi
+              make -j$(nproc)
+              cd bin && tar -zcf ../../ubuntu-${{ matrix.version }}-${{ matrix.arch }}-${{ matrix.compiler }}.tar.gz ./*
+            "
 
-      - name: Upload artifacts
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dynachartview-windows-${{ matrix.build_type }}
-          path: build/bin/
+          name: ubuntu-${{ matrix.version }}-${{ matrix.arch }}-${{ matrix.compiler }}
+          path: ./ubuntu-*.tar.gz
           retention-days: 7
 
-  # ==================== macOS arm64 构建 (Apple Silicon) ====================
-  macos:
-    name: macOS arm64 (Apple Silicon)
-    runs-on: macos-14
-    
+  build-fedora:
+    name: Fedora ${{ matrix.version }} ${{ matrix.arch }} (gcc)
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        version: ["40"]
+        arch: [amd64, arm64]
+      fail-fast: false
+
+    steps:
+      - name: Set up QEMU for multi-architecture
+        uses: docker/setup-qemu-action@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Build and compile
+        run: |
+          docker run --rm \
+            --platform linux/${{ matrix.arch }} \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            fedora:${{ matrix.version }} \
+            /bin/bash -c "
+              dnf install -y \
+                --setopt=retries=5 \
+                --skip-broken \
+                --allowerasing \
+                make cmake gcc-c++ opencv-devel freetype-devel git
+              mkdir -p build && cd build
+              CC=gcc CXX=g++ cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
+              make -j$(nproc)
+              cd bin && tar -zcf ../../fedora-${{ matrix.version }}-${{ matrix.arch }}-gcc.tar.gz ./*
+            "
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fedora-${{ matrix.version }}-${{ matrix.arch }}-gcc
+          path: ./fedora-*.tar.gz
+          retention-days: 7
+
+  build-windows:
+    name: Windows ${{ matrix.arch }} ${{ matrix.type }}
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+        type: [dynamic, static]
+      fail-fast: false
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          .\vcpkg\bootstrap-vcpkg.bat
 
       - name: Install dependencies
         run: |
-          brew update
-          brew install cmake opencv freetype
+          if("${{ matrix.type }}" -eq "static") {
+            $TRIPLET = "${{ matrix.arch }}-windows-static"
+          } else {
+            $TRIPLET = "${{ matrix.arch }}-windows"
+          }
+          .\vcpkg\vcpkg install opencv4 freetype --triplet $TRIPLET
 
-      - name: Create build directory
-        run: mkdir -p build && cd build
-
-      - name: Configure
+      - name: Configure CMake
         run: |
+          mkdir build
           cd build
-          cmake .. \
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DCMAKE_OSX_ARCHITECTURES="arm64" \
-            -DBUILD_SHARED_LIBS=OFF
+          if("${{ matrix.type }}" -eq "static") {
+          cmake .. -G "Visual Studio 17 2022" -A ${{ matrix.arch }} `
+            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\vcpkg\scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.arch }}-windows-static `
+            -DOpenCV_STATIC=ON `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>" `
+            -DCMAKE_BUILD_TYPE=Release
+          } else {
+          cmake .. -G "Visual Studio 17 2022" -A ${{ matrix.arch }} `
+            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\vcpkg\scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.arch }}-windows `
+            -DCMAKE_BUILD_TYPE=Release
+          }
 
       - name: Build
         run: |
           cd build
-          cmake --build . -j$(sysctl -n hw.ncpu)
+          cmake --build . --config Release
 
+      - name: Package dynamic build
+        if: matrix.type == 'dynamic'
+        run: |
+          Compress-Archive -Path build/bin/Release/* -DestinationPath windows-${{ matrix.arch }}-msvc.zip
+
+      - name: Upload dynamic artifact
+        if: matrix.type == 'dynamic'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}-msvc
+          path: ./windows-${{ matrix.arch }}-msvc.zip
+          retention-days: 7
+
+      - name: Upload static exe artifact
+        if: matrix.type == 'static'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}-static
+          path: build/bin/Release/*.exe
+          retention-days: 7
+
+  build-macos:
+    name: macOS arm64 (Clang)
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew install cmake opencv freetype
+      - name: Build
+        run: |
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
+          make -j$(sysctl -n hw.ncpu)
+          cd bin && tar -zcf ../../macos-arm64-clang.tar.gz ./*
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dynachartview-macos-arm64
-          path: build/bin/
+          name: macos-arm64-clang
+          path: ./macos-*.tar.gz
           retention-days: 7
+
+  release:
+    name: Upload to Release
+    runs-on: ubuntu-24.04
+    needs: [build-ubuntu, build-windows, build-macos]
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all required artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./release-artifacts/
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ./release-artifacts/ubuntu-20.04-amd64-gcc/*
+            ./release-artifacts/ubuntu-20.04-arm64-gcc/*
+            ./release-artifacts/ubuntu-24.04-amd64-gcc/*
+            ./release-artifacts/ubuntu-24.04-amd64-clang/*
+            ./release-artifacts/ubuntu-24.04-arm64-gcc/*
+            ./release-artifacts/macos-arm64-clang/*
+            ./release-artifacts/windows-x64-msvc/*
+            ./release-artifacts/windows-arm64-msvc/*
+            ./release-artifacts/windows-x64-static/*
+            ./release-artifacts/windows-arm64-static/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

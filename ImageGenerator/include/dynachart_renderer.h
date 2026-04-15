@@ -8,12 +8,8 @@
 #include <functional>
 
 // FreeType 头文件
-#ifdef _WIN32
 #include <ft2build.h>
 #include FT_FREETYPE_H
-#else
-#include <freetype/freetype.h>
-#endif
 
 // 常量定义 (参考 Python 项目 lib/chart.py Board 类)
 #define SIDE_BORDER -0.4            // 侧面底边界线位置
