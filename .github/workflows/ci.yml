@@ -109,7 +109,9 @@ jobs:
       - name: Build
         run: |
           if [ "${{ matrix.use_runner }}" = "true" ]; then
-            sudo apt update && sudo apt install -y build-essential make cmake clang libopencv-dev libfreetype6-dev
+            # 非交互安装，彻底解决tzdata卡住
+            sudo apt update -y
+            sudo apt install -y build-essential make cmake clang libopencv-dev libfreetype6-dev
             mkdir -p build && cd build
             if [ "${{ matrix.compiler }}" = "gcc" ]; then
               CC=gcc CXX=g++ cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
@@ -118,8 +120,11 @@ jobs:
             fi
             make -j$(nproc)
           else
-            docker run --rm --platform linux/${{ matrix.arch }} -v ${{ github.workspace }}:/workspace -w /workspace ubuntu:${{ matrix.version }} bash -c "
-              apt update && apt install -y build-essential make cmake libopencv-dev libfreetype6-dev
+            docker run --rm --platform linux/${{ matrix.arch }} \
+              -e DEBIAN_FRONTEND=noninteractive \
+              -v ${{ github.workspace }}:/workspace -w /workspace ubuntu:${{ matrix.version }} bash -c "
+              apt update -y
+              apt install -y build-essential make cmake libopencv-dev libfreetype6-dev
               mkdir build && cd build
               CC=gcc CXX=g++ cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
               make -j$(nproc)
