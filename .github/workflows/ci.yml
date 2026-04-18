@@ -1,21 +1,21 @@
-﻿name: CI Build
-# 核心：仅 源码/Cmake/CI配置 变化时触发
+﻿name: CI Build & Smart Release
+
 on:
   push:
     branches: [ main, master ]
     tags: [ 'v*' ]
     paths:
       - .github/workflows/ci.yml
-      - '**/CMakeLists.txt'    # ✅ 递归匹配所有底层/子目录的CMakeLists.txt
+      - '**/CMakeLists.txt'
       - '**/*.cpp'
       - '**/*.h'
       - '**/*.hpp'
-      - '**/*.c'               # 补充C源码（可选，通用兼容）
+      - '**/*.c'
   pull_request:
     branches: [ main, master ]
     paths:
       - .github/workflows/ci.yml
-      - '**/CMakeLists.txt'    # ✅ 递归匹配所有底层/子目录的CMakeLists.txt
+      - '**/CMakeLists.txt'
       - '**/*.cpp'
       - '**/*.h'
       - '**/*.hpp'
@@ -27,16 +27,56 @@ concurrency:
 
 env:
   CMAKE_BUILD_TYPE: Release
+  # 全局禁用交互，彻底解决tzdata卡死问题
+  DEBIAN_FRONTEND: noninteractive
 
 jobs:
+  # ==============================================
+  # 仅 Tag 执行：检查是否已有构建产物
+  # ==============================================
+  check-artifact:
+    name: Check Existing Artifact
+    runs-on: ubuntu-24.04
+    if: github.ref_type == 'tag'
+    outputs:
+      artifact_exists: ${{ steps.check.outputs.artifact_exists }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get commit SHA
+        id: get_commit
+        run: echo "sha=$(git rev-parse ${{ github.ref }})" >> $GITHUB_OUTPUT
+      - name: Try download artifacts
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          commit: ${{ steps.get_commit.outputs.sha }}
+          path: ./temp
+      - name: Check artifact status
+        id: check
+        run: |
+          if [ -d "./temp/ubuntu-20.04-amd64-gcc" ]; then
+            echo "artifact_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "artifact_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ==============================================
+  # Ubuntu 构建（格式规范 + 无跳过问题）
+  # ==============================================
   build-ubuntu:
     name: Ubuntu ${{ matrix.version }} ${{ matrix.arch }} (${{ matrix.compiler }})
-    # 核心修改：根据arch动态匹配正确的runner标签
     runs-on: ${{ matrix.run_on }}
+    needs: check-artifact
+    if: |
+      always() &&
+      (github.ref_type != 'tag' || 
+       (github.ref_type == 'tag' && needs.check-artifact.outputs.artifact_exists == 'false'))
     strategy:
+      fail-fast: false
       matrix:
         include:
-          # amd64 原生 runner → 标签 ubuntu-24.04
           - version: "24.04"
             arch: amd64
             compiler: gcc
@@ -47,13 +87,11 @@ jobs:
             compiler: clang
             use_runner: true
             run_on: ubuntu-24.04
-          # arm64 原生 runner → 标签 ubuntu-24.04-arm
           - version: "24.04"
             arch: arm64
             compiler: gcc
             use_runner: true
             run_on: ubuntu-24.04-arm
-          # Docker 构建 → 通用标签 ubuntu-24.04
           - version: "20.04"
             arch: amd64
             compiler: gcc
@@ -64,105 +102,81 @@ jobs:
             compiler: gcc
             use_runner: false
             run_on: ubuntu-24.04
-      fail-fast: false
     steps:
-      - name: Set up QEMU for multi-architecture
+      - uses: docker/setup-qemu-action@v3
         if: ${{ !matrix.use_runner }}
-        uses: docker/setup-qemu-action@v3
-      
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies (GitHub Runner native)
-        if: ${{ matrix.use_runner }}
+      - uses: actions/checkout@v4
+      - name: Build
         run: |
-          sudo apt update --fix-missing && sudo apt install -y --fix-broken --no-install-recommends \
-            build-essential make cmake clang libopencv-dev libfreetype6-dev
-
-      - name: Build and compile (GitHub Runner native)
-        if: ${{ matrix.use_runner }}
-        run: |
-          mkdir -p build && cd build
-          if [ "${{ matrix.compiler }}" = "gcc" ]; then
-            CC=gcc CXX=g++ cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
+          if [ "${{ matrix.use_runner }}" = "true" ]; then
+            sudo apt update && sudo apt install -y build-essential make cmake clang libopencv-dev libfreetype6-dev
+            mkdir -p build && cd build
+            if [ "${{ matrix.compiler }}" = "gcc" ]; then
+              CC=gcc CXX=g++ cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
+            else
+              CC=clang CXX=clang++ cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
+            fi
+            make -j$(nproc)
           else
-            CC=clang CXX=clang++ cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
-          fi
-          make -j$(nproc)
-          
-
-      - name: Build and compile (Docker)
-        if: ${{ !matrix.use_runner }}
-        run: |
-          docker run --rm \
-            --platform linux/${{ matrix.arch }} \
-            -e DEBIAN_FRONTEND=noninteractive \
-            -e TZ=UTC \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            ubuntu:${{ matrix.version }} \
-            /bin/bash -c "
-              apt update --fix-missing && apt install -y --fix-broken --no-install-recommends \
-                build-essential make cmake clang libopencv-dev libfreetype6-dev
-              mkdir -p build && cd build
-              if [ \"${{ matrix.compiler }}\" = \"gcc\" ]; then
-                CC=gcc CXX=g++ cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
-              else
-                CC=clang CXX=clang++ cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
-              fi
-              make -j$(nproc)
-            "
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4  # 修正：补充actions/前缀
-        with:
-          name: ubuntu-${{ matrix.version }}-${{ matrix.arch }}-${{ matrix.compiler }}
-          path: build/bin/
-          retention-days: 7
-
-  build-fedora:
-    name: Fedora ${{ matrix.version }} ${{ matrix.arch }} (gcc)
-    runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        version: ["40"]
-        arch: [amd64, arm64]
-      fail-fast: false
-
-    steps:
-      - name: Set up QEMU for multi-architecture
-        uses: docker/setup-qemu-action@v3
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Build and compile
-        run: |
-          docker run --rm \
-            --platform linux/${{ matrix.arch }} \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            fedora:${{ matrix.version }} \
-            /bin/bash -c "
-              dnf install -y \
-                --setopt=retries=5 \
-                --skip-broken \
-                --allowerasing \
-                make cmake gcc-c++ opencv-devel freetype-devel git
-              mkdir -p build && cd build
+            docker run --rm --platform linux/${{ matrix.arch }} -v ${{ github.workspace }}:/workspace -w /workspace ubuntu:${{ matrix.version }} bash -c "
+              apt update && apt install -y build-essential make cmake libopencv-dev libfreetype6-dev
+              mkdir build && cd build
               CC=gcc CXX=g++ cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
               make -j$(nproc)
             "
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4  # 修正：补充actions/前缀
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-${{ matrix.version }}-${{ matrix.arch }}-${{ matrix.compiler }}
+          path: build/bin/
+          retention-days: 30
+
+  # ==============================================
+  # Fedora 构建
+  # ==============================================
+  build-fedora:
+    name: Fedora ${{ matrix.version }} ${{ matrix.arch }} (gcc)
+    runs-on: ubuntu-24.04
+    needs: check-artifact
+    if: |
+      always() &&
+      (github.ref_type != 'tag' || 
+       (github.ref_type == 'tag' && needs.check-artifact.outputs.artifact_exists == 'false'))
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["40"]
+        arch: [amd64, arm64]
+    steps:
+      - uses: docker/setup-qemu-action@v3
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          docker run --rm --platform linux/${{ matrix.arch }} -v ${{ github.workspace }}:/workspace -w /workspace fedora:${{ matrix.version }} bash -c "
+            dnf install -y make cmake gcc-c++ opencv-devel freetype-devel
+            mkdir build && cd build
+            cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
+            make -j$(nproc)
+          "
+      - uses: actions/upload-artifact@v4
         with:
           name: fedora-${{ matrix.version }}-${{ matrix.arch }}-gcc
           path: build/bin/
-          retention-days: 7
+          retention-days: 30
 
+  # ==============================================
+  # Windows 构建
+  # ==============================================
   build-windows:
     name: Windows ${{ matrix.arch }} ${{ matrix.type }}
-  # ✅ 直接引用矩阵定义的 runner 标签，无复杂表达式
     runs-on: ${{ matrix.run_on }}
+    needs: check-artifact
+    if: |
+      always() &&
+      (github.ref_type != 'tag' || 
+       (github.ref_type == 'tag' && needs.check-artifact.outputs.artifact_exists == 'false'))
     strategy:
+      fail-fast: false
       matrix:
         include:
           - arch: x64
@@ -177,86 +191,109 @@ jobs:
           - arch: arm64
             type: static
             run_on: windows-11-arm
-      fail-fast: false
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Install vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg.git
           .\vcpkg\bootstrap-vcpkg.bat
-
-      - name: Install dependencies
+      - name: Set vcpkg triplet
+        id: triplet
+        shell: pwsh
         run: |
-          if("${{ matrix.type }}" -eq "static") {
-            $TRIPLET = "${{ matrix.arch }}-windows-static"
+          if ("${{ matrix.type }}" -eq "static") {
+            echo "TRIPLET=${{ matrix.arch }}-windows-static" >> $env:GITHUB_OUTPUT
           } else {
-            $TRIPLET = "${{ matrix.arch }}-windows"
+            echo "TRIPLET=${{ matrix.arch }}-windows" >> $env:GITHUB_OUTPUT
           }
-          .\vcpkg\vcpkg install opencv4 freetype --triplet $TRIPLET
-
+      - name: Install dependencies
+        run: .\vcpkg\vcpkg install opencv4 freetype --triplet ${{ steps.triplet.outputs.TRIPLET }}
       - name: Configure CMake
         run: |
-          # ========== 核心修复：动态/静态自动切换 ==========
-          if("${{ matrix.type }}" -eq "static") {
-            $TRIPLET = "${{ matrix.arch }}-windows-static"
-            $OPENCV_STATIC = "ON"
-          } else {
-            $TRIPLET = "${{ matrix.arch }}-windows"
-            $OPENCV_STATIC = "OFF"
-          }
-
           mkdir build
           cd build
-
           cmake .. -G "Visual Studio 17 2022" -A ${{ matrix.arch }} `
-            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\vcpkg\scripts\buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET="$TRIPLET" `
-            -DOpenCV_STATIC="$OPENCV_STATIC" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_FIND_DEBUG_MODE=ON
-
+            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET="${{ steps.triplet.outputs.TRIPLET }}" `
+            -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: |
           cd build
           cmake --build . --config Release
-          
-      # There's no need to package
       - name: Upload dynamic artifact
         if: matrix.type == 'dynamic'
         uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.arch }}
           path: build/bin/Release/
-          retention-days: 7
-
-      - name: Upload static exe artifact
+          retention-days: 30
+      - name: Upload static artifact
         if: matrix.type == 'static'
         uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.arch }}-static
           path: build/bin/Release/*.exe
-          retention-days: 7
+          retention-days: 30
 
+  # ==============================================
+  # macOS 构建
+  # ==============================================
   build-macos:
     name: macOS arm64 (Clang)
     runs-on: macos-14
-
+    needs: check-artifact
+    if: |
+      always() &&
+      (github.ref_type != 'tag' || 
+       (github.ref_type == 'tag' && needs.check-artifact.outputs.artifact_exists == 'false'))
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Install dependencies
-        run: brew install cmake opencv freetype
+      - uses: actions/checkout@v4
+      - run: brew install cmake opencv freetype
       - name: Build
         run: |
           mkdir build && cd build
           cmake .. -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
           make -j$(sysctl -n hw.ncpu)
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4  # 修正：补充actions/前缀
+      - uses: actions/upload-artifact@v4
         with:
           name: macos-arm64-clang
           path: build/bin/
-          retention-days: 7
+          retention-days: 30
+
+  # ==============================================
+  # 发布任务（仅 Tag 执行）
+  # ==============================================
+  release:
+    name: Package & Release
+    runs-on: ubuntu-24.04
+    needs: [build-ubuntu, build-fedora, build-windows, build-macos]
+    if: github.ref_type == 'tag'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get commit SHA
+        id: get_commit
+        run: echo "sha=$(git rev-parse ${{ github.ref }})" >> $GITHUB_OUTPUT
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          commit: ${{ steps.get_commit.outputs.sha }}
+          path: ./artifacts
+      - name: Package to required zip
+        run: |
+          mkdir -p release
+          zip -j release/ubuntu-20.04-amd64.zip artifacts/ubuntu-20.04-amd64-gcc/*
+          zip -j release/ubuntu-20.04-arm64.zip artifacts/ubuntu-20.04-arm64-gcc/*
+          zip -j release/macos-arm64.zip artifacts/macos-arm64-clang/*
+          zip -j release/windows-x64.zip artifacts/windows-x64/*
+          zip -j release/windows-arm64.zip artifacts/windows-arm64/*
+          zip -j release/windows-x64-static.zip artifacts/windows-x64-static/*
+          zip -j release/windows-arm64-static.zip artifacts/windows-arm64-static/*
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

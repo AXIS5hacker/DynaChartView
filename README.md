@@ -145,6 +145,8 @@ windows-x64-static.zip - Windows x64 static executable (built with MSVC 2022, st
 
 windows-arm64-static.zip - Windows ARM64 static executable (built with MSVC 2022, statically linked runtime)
 
+DynaChartView_Setup_xxx.exe - Windows installer package (built with MSVC 2022, includes MSVC runtime installer)
+
 ---
 
 ## 🛠️ Compilation Methods
